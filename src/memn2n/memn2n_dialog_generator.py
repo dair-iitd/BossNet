@@ -124,7 +124,7 @@ class MemN2NGeneratorDialog(object):
         encoder_states,attn_arr = self._encoder(self._stories, self._queries)
         
         # train_op 
-        loss_op = self._decoder_train(encoder_states)
+        loss_op, logits = self._decoder_train(encoder_states)
         
         # gradient pipeline
         grads_and_vars = self._opt.compute_gradients(loss_op)
@@ -145,7 +145,7 @@ class MemN2NGeneratorDialog(object):
         predict_op = self._decoder_runtime(encoder_states)
         
         # assign ops
-        self.loss_op = loss_op
+        self.loss_op = loss_op, logits
         self.predict_op = predict_op
         self.train_op = train_op
 
@@ -253,9 +253,9 @@ class MemN2NGeneratorDialog(object):
         with tf.variable_scope(self._name):
             
             batch_size = tf.shape(self._stories)[0]
-            # decoder_input = batch_size x candidate_sentence_size+1
+            # decoder_input = batch_size x candidate_sentence_size
             decoder_input = tf.concat([tf.fill([batch_size, 1], self.GO_SYMBOL), self._answers[:, :]],axis=1)
-            # decoder_emb_inp = batch_size x candidate_sentence_size+1 x embedding_size
+            # decoder_emb_inp = batch_size x candidate_sentence_size x embedding_size
             decoder_emb_inp = tf.nn.embedding_lookup(self.C, decoder_input)
 
             with tf.variable_scope('decoder'):
@@ -265,14 +265,12 @@ class MemN2NGeneratorDialog(object):
                 logits = outputs.rnn_output
 
                 target_weights = tf.reshape(self._answer_sizes,[-1])
-                target_weights = tf.add(target_weights, tf.ones_like(target_weights))
-                target_weights = tf.sequence_mask(target_weights, self._candidate_sentence_size+1, dtype=tf.float32) 
-        
-                decoder_outputs = tf.concat([self._answers[:, :], tf.fill([batch_size, 1], self.EOS)],axis=1)
-                crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=decoder_outputs, logits=logits)
+                target_weights = tf.sequence_mask(target_weights, self._candidate_sentence_size, dtype=tf.float32) 
+
+                crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self._answers, logits=logits)
                 loss = tf.reduce_sum(crossent * target_weights)
 
-        return loss
+        return loss, logits
 
     def _decoder_runtime(self, encoder_states):
         

@@ -108,7 +108,7 @@ class chatBot(object):
         mean_story_size = int(np.mean([len(s) for s, _, _, _ in data]))
         self.sentence_size = max(
             map(len, chain.from_iterable(s for s, _, _, _ in data)))
-        self.candidate_sentence_size = max(map(len, candidates))
+        self.candidate_sentence_size = max(map(len, candidates))+1
         query_size = max(map(len, (q for _, q, _, _ in data)))
         self.memory_size = min(self.memory_size, max_story_size)
         self.vocab_size = len(self.word_idx) + 1  # +1 for nil word
@@ -141,7 +141,9 @@ class chatBot(object):
                 sizes = trainSZ[start:end]
                 qsize = trainQZ[start:end]
                 asize = trainCZ[start:end]
-                cost_t = self.model.batch_fit(s, q, a, c, sizes, qsize, asize)
+                print(len(a), " ", len(a[0]))
+                cost_t, logits = self.model.batch_fit(s, q, a, c, sizes, qsize, asize)
+                print(logits.shape)
                 total_cost += cost_t
             
             if t % self.evaluation_interval == 0:

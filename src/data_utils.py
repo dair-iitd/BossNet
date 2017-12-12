@@ -7,6 +7,10 @@ import tensorflow as tf
 
 stop_words=set(["a","an","the"])
 
+UNK_INDEX = 0
+GO_SYMBOL_INDEX = 1
+EOS_INDEX = 2
+
 def load_candidates(data_dir, task_id):
     assert task_id > 0 and task_id < 7
     candidates=[]
@@ -29,14 +33,14 @@ def get_decoder_vocab(data_dir, task_id):
     decoder_vocab_to_index={}
     decoder_index_to_vocab={}
 
-    decoder_vocab_to_index['UNK']=0
-    decoder_index_to_vocab[0]='UNK'
+    decoder_vocab_to_index['UNK']=UNK_INDEX
+    decoder_index_to_vocab[UNK_INDEX]='UNK'
 
-    decoder_vocab_to_index['GO_SYMBOL']=1
-    decoder_index_to_vocab[1]='GO_SYMBOL'
+    decoder_vocab_to_index['GO_SYMBOL']=GO_SYMBOL_INDEX
+    decoder_index_to_vocab[GO_SYMBOL_INDEX]='GO_SYMBOL'
 
-    decoder_vocab_to_index['EOS']=2
-    decoder_index_to_vocab[0]='EOS'
+    decoder_vocab_to_index['EOS']=EOS_INDEX
+    decoder_index_to_vocab[EOS_INDEX]='EOS'
 
     if task_id==6:
         candidates_f='dialog-babi-task6-dstc2-candidates.txt'
@@ -238,15 +242,15 @@ def vectorize_data(data, word_idx, sentence_size, batch_size, candidates_size, m
         lq = max(0, sentence_size - len(query))
         q = [word_idx[w] if w in word_idx else 0 for w in query] + [0] * lq
 
-        aq = max(0, candidate_sentence_size - len(answer))
-        a = [decoder_vocab[w] if w in decoder_vocab else 0 for w in answer] + [0] * aq
+        aq = max(0, candidate_sentence_size - len(answer) - 1)
+        a = [decoder_vocab[w] if w in decoder_vocab else 0 for w in answer] + [EOS_INDEX] + [0] * aq
 
         S.append(np.array(ss))
         Q.append(np.array(q))
         A.append(np.array(a))
         SZ.append(np.array(sizes))
         QZ.append(np.array([len(query)]))
-        CZ.append(np.array([len(answer)]))
+        CZ.append(np.array([len(answer)+1]))
     return S, Q, A, SZ, QZ, CZ
 
 def vectorize_data_with_surface_form(data, word_idx, sentence_size, batch_size, candidates_size, max_memory_size, decoder_vocab, candidate_sentence_size):
