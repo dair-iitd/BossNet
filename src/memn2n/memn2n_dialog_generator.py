@@ -15,11 +15,10 @@ def zero_nil_slot(t, name=None):
     The nil_slot is a dummy slot and should not be trained and influence
     the training algorithm.
     """
-    with tf.op_scope([t], name, "zero_nil_slot") as name:
+    with tf.name_scope(name, "zero_nil_slot", [t]) as name:
         t = tf.convert_to_tensor(t, name="t")
         s = tf.shape(t)[1]
         z = tf.zeros(tf.stack([1, s]))
-        # z = tf.zeros([1, s])
         return tf.concat([z, tf.slice(t, [1, 0], [-1, -1])], 0, name=name)
 
 
@@ -33,7 +32,7 @@ def add_gradient_noise(t, stddev=1e-3, name=None):
 
     0.001 was said to be a good fixed value for memory networks [2].
     """
-    with tf.op_scope([t, stddev], name, "add_gradient_noise") as name:
+    with tf.name_scope(name, "add_gradient_noise", [t, stddev]) as name:
         t = tf.convert_to_tensor(t, name="t")
         gn = tf.random_normal(tf.shape(t), stddev=stddev)
         return tf.add(t, gn, name=name)
@@ -51,8 +50,7 @@ class MemN2NGeneratorDialog(object):
                  optimizer=tf.train.AdamOptimizer(learning_rate=1e-2),
                  session=tf.Session(),
                  name='MemN2N',
-                 task_id=1,
-                 is_train=False):
+                 task_id=1):
         """Creates an End-To-End Memory Network
 
         Args:
@@ -103,15 +101,15 @@ class MemN2NGeneratorDialog(object):
         self._init = initializer
         self._opt = optimizer
         self._name = name
-        #self._candidates = candidates_vec
-        self._is_train = is_train
         self._candidate_sentence_size = candidate_sentence_size
         
         # add unk and eos
         self.UNK = decoder_vocab_to_index["UNK"]
         self.EOS = decoder_vocab_to_index["EOS"]
         self.GO_SYMBOL = decoder_vocab_to_index["GO_SYMBOL"]
+
         self._decoder_vocab_size = len(decoder_vocab_to_index)
+        self._decoder_vocab_to_index = decoder_vocab_to_index
 
         self._build_inputs()
         self._build_vars()
@@ -138,8 +136,7 @@ class MemN2NGeneratorDialog(object):
                 nil_grads_and_vars.append((zero_nil_slot(g), v))
             else:
                 nil_grads_and_vars.append((g, v))
-        train_op = self._opt.apply_gradients(
-            nil_grads_and_vars, name="train_op")
+        train_op = self._opt.apply_gradients(nil_grads_and_vars, name="train_op")
 
         # predict ops
         predict_op = self._decoder_runtime(encoder_states)
@@ -151,35 +148,34 @@ class MemN2NGeneratorDialog(object):
 
         self.graph_output = self.loss_op
 
-        init_op = tf.initialize_all_variables()
+        init_op = tf.global_variables_initializer()
         self._sess = session
         self._sess.run(init_op)
 
     def _build_inputs(self):
-        self._stories = tf.placeholder(
-            tf.int32, [None, None, self._sentence_size], name="stories")
-        self._queries = tf.placeholder(
-            tf.int32, [None, self._sentence_size], name="queries")
-        self._answers = tf.placeholder(
-            tf.int32, [None, self._candidate_sentence_size], name="answers")
-        self._answer_types = tf.placeholder(tf.int32, [None], name="answer_types")
+        '''
+            Define Input Variables to be given to the model
+        '''
+        self._stories = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="stories")
+        self._queries = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries")
+        self._answers = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers")
         self._sentence_sizes = tf.placeholder(tf.int32, [None, None], name="sentence_sizes")
         self._query_sizes = tf.placeholder(tf.int32, [None, 1], name="query_sizes")
         self._answer_sizes = tf.placeholder(tf.int32, [None, 1], name="answer_sizes")
 
     def _build_vars(self):
+        '''
+            Define Model specific variables used to train and fit and test the model
+        '''
         with tf.variable_scope(self._name):
             nil_word_slot = tf.zeros([1, self._embedding_size])
-            A = tf.concat([nil_word_slot, self._init(
-                [self._vocab_size - 1, self._embedding_size])], 0)
+            A = tf.concat([nil_word_slot, self._init([self._vocab_size - 1, self._embedding_size])], 0)
             self.A = tf.Variable(A, name="A")
             
-            C = tf.concat([nil_word_slot, self._init(
-                [self._decoder_vocab_size, self._embedding_size])], 0)
+            C = tf.concat([nil_word_slot, self._init([self._decoder_vocab_size, self._embedding_size])], 0)
             self.C = tf.Variable(C, name="C")
 
-            self.H = tf.Variable(self._init(
-                [self._embedding_size, self._embedding_size]), name="H")
+            self.H = tf.Variable(self._init([self._embedding_size, self._embedding_size]), name="H")
             
             with tf.variable_scope("encoder"):
                 self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size/2)
@@ -218,9 +214,6 @@ class MemN2NGeneratorDialog(object):
                 sizes = tf.reshape(self._sentence_sizes, [-1])
                 with tf.variable_scope("encoder", reuse=True):
                     (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, sentences, sequence_length=sizes, dtype=tf.float32)
-                # (forward, backward) = outputs
-                # f_state = tf.map_fn(lambda x: tf.gather(x[0], x[1]), (forward, self._sentence_sizes), dtype=tf.float32)
-                # b_state = tf.map_fn(lambda x: tf.gather(x[0], x[1]), (backward, self._sentence_sizes), dtype=tf.float32)
                 (f_state, b_state) = output_states
                 # m : batch_size x memory_size x embedding_size
                 m = tf.reshape(tf.concat([f_state, b_state], 1), [batch_size, memory_size, -1])
@@ -237,7 +230,7 @@ class MemN2NGeneratorDialog(object):
                 o_k = tf.reduce_sum(c_temp * probs_temp, 2)
 
                 u_k = tf.matmul(u[-1], self.H) + o_k
-                # u_k=u[-1]+tf.matmul(o_k,self.H)
+
                 # nonlinearity
                 if self._nonlin:
                     u_k = self._nonlin(u_k)
@@ -248,7 +241,7 @@ class MemN2NGeneratorDialog(object):
             
     def _decoder_train(self, encoder_states):
         
-        # encoder_states = batch_size x 1
+        # encoder_states = batch_size x embedding_size
         # answers = batch_size x candidate_sentence_size
         with tf.variable_scope(self._name):
             
@@ -259,15 +252,19 @@ class MemN2NGeneratorDialog(object):
             decoder_emb_inp = tf.nn.embedding_lookup(self.C, decoder_input)
 
             with tf.variable_scope('decoder'):
-                helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, tf.reshape(self._answer_sizes,[-1]))
+                answer_sizes = tf.reshape(self._answer_sizes,[-1])
+                helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
                 decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, encoder_states, output_layer=self.projection_layer)
-                outputs, _ = tf.contrib.seq2seq.dynamic_decode(decoder)
+                outputs,_ ,_ = tf.contrib.seq2seq.dynamic_decode(decoder)
                 logits = outputs.rnn_output
-
+                max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
+                ans = self._answers[:, :max_length]
+                
                 target_weights = tf.reshape(self._answer_sizes,[-1])
-                target_weights = tf.sequence_mask(target_weights, self._candidate_sentence_size, dtype=tf.float32) 
+                target_weights = tf.sequence_mask(target_weights, self._candidate_sentence_size, dtype=tf.float32)
+                target_weights = target_weights[:, :max_length] 
 
-                crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self._answers, logits=logits)
+                crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=logits)
                 loss = tf.reduce_sum(crossent * target_weights)
 
         return loss, logits
@@ -281,29 +278,28 @@ class MemN2NGeneratorDialog(object):
             with tf.variable_scope('decoder', reuse=True):
                 helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
                 decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, encoder_states,output_layer=self.projection_layer)
-                outputs, _ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=2*self._candidate_sentence_size)
+                outputs,_ ,_ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=2*self._candidate_sentence_size)
                 translations = outputs.sample_id
 
         return translations
 
-    def batch_fit(self, stories, queries, answers, answer_types, sentence_sizes, query_sizes, answer_sizes):
+    def batch_fit(self, stories, queries, answers, sentence_sizes, query_sizes, answer_sizes):
         """Runs the training algorithm over the passed batch
 
         Args:
             stories: Tensor (None, memory_size, sentence_size)
             queries: Tensor (None, sentence_size)
             answers: Tensor (None, vocab_size)
-            answer_types: Tensor (None, 1)
             sentence_sizes: Tensor (None, memory_size)
             query_sizes: Tensor (None, 1)
+            answer_sizes: Tensor (None, 1)
 
         Returns:
             loss: floating-point number, the loss computed for the batch
         """
         feed_dict = {self._stories: stories, self._queries: queries, self._answers: answers, 
-                self._answer_types: answer_types, self._sentence_sizes: sentence_sizes, self._query_sizes: query_sizes, self._answer_sizes: answer_sizes}
-        loss, _ = self._sess.run(
-            [self.loss_op, self.train_op], feed_dict=feed_dict)
+                self._sentence_sizes: sentence_sizes, self._query_sizes: query_sizes, self._answer_sizes: answer_sizes}
+        loss, _ = self._sess.run([self.loss_op, self.train_op], feed_dict=feed_dict)
         return loss
 
     def predict(self, stories, queries, sentence_sizes, query_sizes):
