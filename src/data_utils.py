@@ -4,6 +4,7 @@ import os
 import re
 import numpy as np
 import tensorflow as tf
+import nltk
 
 # Global Variables
 stop_words=set(["a","an","the"])
@@ -277,3 +278,26 @@ def vectorize_data_with_surface_form(data, word_idx, sentence_size, batch_size, 
         dialogIDs.append(dialog_id)
 
     return S, Q, A, SZ, QZ, CZ, S_in_readable_form, Q_in_readable_form, last_db_results, dialogIDs
+
+def pad_to_answer_size(pred, size):
+    for i, list in enumerate(pred):
+        if len(list) >= size:
+            pred[i] = list[:size]
+        else:
+            arr = np.array([0] * (size - len(list)))
+            pred[i] = np.append(list, arr)
+    return pred
+
+def bleu_accuracy_score(preds, vals, idx2voc):
+    total_score = 0.0
+    for pred, val in zip(preds, vals):
+        reference = [idx2voc[x] for x in pred if x != EOS_INDEX]
+        hypothesis = [idx2voc[x] for x in val if x != EOS_INDEX]
+        total_score += nltk.translate.bleu_score.sentence_bleu([reference], hypothesis)
+    return float(total_score) / len(preds)
+
+
+
+
+
+

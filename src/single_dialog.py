@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-from data_utils import get_decoder_vocab, load_dialog_task, vectorize_data, load_candidates, vectorize_data_with_surface_form, tokenize
+from data_utils import get_decoder_vocab, load_dialog_task, vectorize_data, load_candidates, vectorize_data_with_surface_form, tokenize, pad_to_answer_size, bleu_accuracy_score
 from sklearn import metrics
 from memn2n.memn2n_dialog_generator import MemN2NGeneratorDialog
 from itertools import chain
@@ -148,9 +148,15 @@ class chatBot(object):
                 total_cost += cost_t
             
             if t % self.evaluation_interval == 0:
+                train_preds = self.batch_predict(trainS, trainQ, trainSZ, trainQZ, n_train)
+                val_preds = self.batch_predict(valS, valQ, valSZ, valQZ, n_val)
+                train_acc = bleu_accuracy_score(train_preds, trainA, self.decoder_index_to_vocab)
+                val_acc = bleu_accuracy_score(val_preds, valA, self.decoder_index_to_vocab)
                 print('-----------------------')
                 print('Epoch', t)
                 print('Total Cost:', total_cost)
+                print('Training Accuracy:', train_acc)
+                print('Validation Accuracy:', val_acc)
                 print('-----------------------')
                 sys.stdout.flush()
                 
@@ -327,8 +333,7 @@ class chatBot(object):
             sizes = SZ[start:end]
             qsize = QZ[start:end]
             pred = self.model.predict(s, q, sizes, qsize)
-            preds += list(pred)
-            
+            preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
         return preds
 
     def close_session(self):
