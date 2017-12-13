@@ -150,8 +150,8 @@ class chatBot(object):
             if t % self.evaluation_interval == 0:
                 train_preds = self.batch_predict(trainS, trainQ, trainSZ, trainQZ, n_train)
                 val_preds = self.batch_predict(valS, valQ, valSZ, valQZ, n_val)
-                train_acc = bleu_accuracy_score(train_preds, trainA, self.decoder_index_to_vocab)
-                val_acc = bleu_accuracy_score(val_preds, valA, self.decoder_index_to_vocab)
+                train_acc = bleu_accuracy_score(train_preds, trainA, self.decoder_index_to_vocab, self.candidates)
+                val_acc = bleu_accuracy_score(val_preds, valA, self.decoder_index_to_vocab, self.candidates)
                 print('-----------------------')
                 print('Epoch', t)
                 print('Total Cost:', total_cost)

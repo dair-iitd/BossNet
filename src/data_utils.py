@@ -5,6 +5,8 @@ import re
 import numpy as np
 import tensorflow as tf
 import nltk
+from nltk.translate.bleu_score import corpus_bleu
+from string import punctuation
 
 # Global Variables
 stop_words=set(["a","an","the"])
@@ -288,12 +290,26 @@ def pad_to_answer_size(pred, size):
             pred[i] = np.append(list, arr)
     return pred
 
-def bleu_accuracy_score(preds, vals, idx2voc):
+def bleu_accuracy_score(preds, vals, idx2voc, candidates):
     total_score = 0.0
+    count = 1
     for pred, val in zip(preds, vals):
-        reference = [idx2voc[x] for x in pred if x != EOS_INDEX]
-        hypothesis = [idx2voc[x] for x in val if x != EOS_INDEX]
-        total_score += nltk.translate.bleu_score.sentence_bleu([reference], hypothesis)
+        print(count)
+        count += 1
+        reference = [idx2voc[x] for x in pred if x != EOS_INDEX and x != UNK_INDEX]
+        compare = [idx2voc[x] for x in val if x != EOS_INDEX and x != UNK_INDEX]
+        max_score = 0.0
+        max_cand = None
+        for cand in candidates:
+            hypothesis = cand
+            score = corpus_bleu([[reference]], [hypothesis])
+            if score > max_score:
+                max_cand = cand
+            if score == 1.0:
+                break
+        if compare == max_cand:
+            total_score += 1.0
+
     return float(total_score) / len(preds)
 
 
