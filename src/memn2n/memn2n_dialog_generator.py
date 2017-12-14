@@ -50,7 +50,8 @@ class MemN2NGeneratorDialog(object):
                  optimizer=tf.train.AdamOptimizer(learning_rate=1e-2),
                  session=tf.Session(),
                  name='MemN2N',
-                 task_id=1):
+                 task_id=1,
+                 use_beam_search=False):
         """Creates an End-To-End Memory Network
 
         Args:
@@ -102,6 +103,8 @@ class MemN2NGeneratorDialog(object):
         self._opt = optimizer
         self._name = name
         self._candidate_sentence_size = candidate_sentence_size
+        self._beam_width = 10
+        self._use_beam_search = use_beam_search
         
         # add unk and eos
         self.UNK = decoder_vocab_to_index["UNK"]
@@ -119,17 +122,15 @@ class MemN2NGeneratorDialog(object):
         self.root_dir = "%s_%s_%s_%s/" % ('task',
                                           str(task_id), 'summary_output', timestamp)
 
-        encoder_states,attn_arr = self._encoder(self._stories, self._queries)
+        encoder_states, attn_arr = self._encoder(self._stories, self._queries)
         
         # train_op 
-        loss_op, logits = self._decoder_train(encoder_states)
+        loss_op, logits = self._decoder_train(encoder_states, memory)
         
         # gradient pipeline
+        
         grads_and_vars = self._opt.compute_gradients(loss_op)
-        grads_and_vars = [(tf.clip_by_norm(g, self._max_grad_norm), v)
-                          for g, v in grads_and_vars]
-
-        # grads_and_vars = [(add_gradient_noise(g), v) for g,v in grads_and_vars]
+        grads_and_vars = [(tf.clip_by_norm(g, self._max_grad_norm), v) for g, v in grads_and_vars if g != None]
         nil_grads_and_vars = []
         for g, v in grads_and_vars:
             if v.name in self._nil_vars:
@@ -205,18 +206,19 @@ class MemN2NGeneratorDialog(object):
             memory_size = tf.shape(stories)[1]
             batch_size = tf.shape(stories)[0]
 
+            # stories : batch_size x memory_size x sentence_size
+            # m_emb : batch_size x memory_size x sentence_size x embedding_size
+            m_emb = tf.nn.embedding_lookup(self.A, stories)
+
+            sentences = tf.reshape(m_emb, [-1, self._sentence_size, self._embedding_size])
+            sizes = tf.reshape(self._sentence_sizes, [-1])
+            with tf.variable_scope("encoder", reuse=True):
+                (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, sentences, sequence_length=sizes, dtype=tf.float32)
+            (f_state, b_state) = output_states
+            
+            # m : batch_size x memory_size x embedding_size
+            m = tf.reshape(tf.concat([f_state, b_state], 1), [batch_size, memory_size, -1])
             for hop_index in range(self._hops):
-                # stories : batch_size x memory_size x sentence_size
-                # m_emb : batch_size x memory_size x sentence_size x embedding_size
-                m_emb = tf.nn.embedding_lookup(self.A, stories)
-                
-                sentences = tf.reshape(m_emb, [-1, self._sentence_size, self._embedding_size])
-                sizes = tf.reshape(self._sentence_sizes, [-1])
-                with tf.variable_scope("encoder", reuse=True):
-                    (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, sentences, sequence_length=sizes, dtype=tf.float32)
-                (f_state, b_state) = output_states
-                # m : batch_size x memory_size x embedding_size
-                m = tf.reshape(tf.concat([f_state, b_state], 1), [batch_size, memory_size, -1])
                     
                 # hack to get around no reduce_dot
                 u_temp = tf.transpose(tf.expand_dims(u[-1], -1), [0, 2, 1])
@@ -237,9 +239,9 @@ class MemN2NGeneratorDialog(object):
 
                 u.append(u_k)
             
-            return u_k, attn_arr
+            return u_k, m, attn_arr
             
-    def _decoder_train(self, encoder_states):
+    def _decoder_train(self, encoder_states, memory):
         
         # encoder_states = batch_size x embedding_size
         # answers = batch_size x candidate_sentence_size
@@ -252,8 +254,15 @@ class MemN2NGeneratorDialog(object):
             decoder_emb_inp = tf.nn.embedding_lookup(self.C, decoder_input)
 
             with tf.variable_scope('decoder'):
+                
                 answer_sizes = tf.reshape(self._answer_sizes,[-1])
                 helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
+
+                # make the shape concerete to prevent the error
+                #reshaped_memory = tf.reshape(memory,[self._batch_size, -1, self._embedding_size])
+                #attention_mechanism = tf.contrib.seq2seq.LuongAttention(self._embedding_size, reshaped_memory)
+                #decoder_cell_with_attn = tf.contrib.seq2seq.AttentionWrapper(self.decoder_cell, attention_mechanism, name="cell_with_attn")
+
                 decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, encoder_states, output_layer=self.projection_layer)
                 outputs,_ ,_ = tf.contrib.seq2seq.dynamic_decode(decoder)
                 logits = outputs.rnn_output
@@ -276,11 +285,24 @@ class MemN2NGeneratorDialog(object):
         with tf.variable_scope(self._name):
             batch_size = tf.shape(self._stories)[0]
             with tf.variable_scope('decoder', reuse=True):
-                helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
-                decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, encoder_states,output_layer=self.projection_layer)
-                outputs,_ ,_ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=2*self._candidate_sentence_size)
-                translations = outputs.sample_id
-
+                
+                if self._use_beam_search:
+                    decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+                        self.decoder_cell,self.C,tf.fill([batch_size], self.GO_SYMBOL),
+                        self.EOS, tf.contrib.seq2seq.tile_batch(encoder_states, multiplier=self._beam_width), 
+                        self._beam_width, output_layer = self.projection_layer)
+                else:
+                    helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
+                    decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, encoder_states,output_layer=self.projection_layer)
+                
+                outputs,_,_ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=2*self._candidate_sentence_size)
+                
+                if self._use_beam_search:
+                    predicted_ids = outputs.predicted_ids
+                    translations = tf.gather(predicted_ids,0,axis=2)
+                else:
+                    translations = outputs.sample_id
+                
         return translations
 
     def batch_fit(self, stories, queries, answers, sentence_sizes, query_sizes, answer_sizes):

@@ -293,11 +293,11 @@ def pad_to_answer_size(pred, size):
 def bleu_accuracy_score(preds, vals, idx2voc, candidates):
     total_score = 0.0
     for pred, val in zip(preds, vals):
-        reference = [idx2voc[x] for x in pred if x != EOS_INDEX and x != UNK_INDEX]
+        reference = [idx2voc[x] for x in pred if x != EOS_INDEX and x != UNK_INDEX and x != -1]
         hypothesis = [idx2voc[x] for x in val if x != EOS_INDEX and x != UNK_INDEX]
         score = corpus_bleu([[reference]], [hypothesis])
         if score > 0.9:
-            total_score + 1.0
+            total_score += 1.0
 
     return (float(total_score) / len(preds))*100
 

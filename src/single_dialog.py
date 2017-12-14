@@ -25,6 +25,7 @@ tf.flags.DEFINE_integer("embedding_size", 32, "Embedding size for embedding matr
 tf.flags.DEFINE_integer("memory_size", 50, "Maximum size of memory.")
 tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
+tf.flags.DEFINE_boolean('use_beam_search', False, 'if True, uses beam search for dcoding, else uses greedy decoding')
 
 # Output Specifications
 tf.flags.DEFINE_boolean('game', False, 'if True, show infinite game results')
@@ -62,6 +63,7 @@ class chatBot(object):
         self.hops = FLAGS.hops
         self.epochs = FLAGS.epochs
         self.embedding_size = FLAGS.embedding_size
+        self.use_beam_search= FLAGS.use_beam_search
 
         # Create Model Store Directory
         if not os.path.exists(self.model_dir):
@@ -96,7 +98,7 @@ class chatBot(object):
         self.model = MemN2NGeneratorDialog(self.batch_size, self.vocab_size, self.num_cand, self.sentence_size, 
                                            self.embedding_size, self.decoder_vocab_to_index, self.candidate_sentence_size, 
                                            session=self.sess, hops=self.hops, max_grad_norm=self.max_grad_norm, 
-                                           optimizer=self.optimizer, task_id=self.task_id)
+                                           optimizer=self.optimizer, task_id=self.task_id, use_beam_search=self.use_beam_search)
         self.saver = tf.train.Saver(max_to_keep=50)
 
     def build_vocab(self, data):
@@ -160,10 +162,9 @@ class chatBot(object):
                 print('-----------------------')
                 sys.stdout.flush()
                 
-                # TODO : Implement validation set accuracy and early stop
-                # if val_acc > best_validation_accuracy:
-                #    best_validation_accuracy = val_acc
-                self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
+                if val_acc > best_validation_accuracy:
+                    best_validation_accuracy = val_acc
+                    self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
 
     def test(self):
         '''
@@ -183,7 +184,8 @@ class chatBot(object):
                 self.testData, self.word_idx, self.sentence_size, self.batch_size, self.num_cand, self.memory_size, self.decoder_vocab_to_index, self.candidate_sentence_size)
             n_test = len(testS)
             test_preds = self.batch_predict(testS, testQ, testSZ, testQZ, n_test)
-            test_acc = metrics.accuracy_score(test_preds, testA)
+            test_acc = bleu_accuracy_score(test_preds,testA, self.decoder_index_to_vocab, self.candidates)
+
             match=0
             total=0
             match_acc=0
@@ -321,7 +323,7 @@ class chatBot(object):
                     print("Suggestion Game Accuracy :", str(float(len(correct_predictions))/len(counter)) +  " (" +  str(len(correct_predictions)) +  "/" + str(len(counter)) + ")" )
                     if len(correct_predictions) > 0:
                         print("Suggestion Game Mean     :", float(sum(correct_predictions))/len(correct_predictions))
-
+            
             print("------------------------")
 
     def batch_predict(self, S, Q, SZ, QZ, n):
