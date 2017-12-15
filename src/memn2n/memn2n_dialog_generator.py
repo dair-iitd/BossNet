@@ -122,7 +122,7 @@ class MemN2NGeneratorDialog(object):
         self.root_dir = "%s_%s_%s_%s/" % ('task',
                                           str(task_id), 'summary_output', timestamp)
 
-        encoder_states, attn_arr = self._encoder(self._stories, self._queries)
+        encoder_states, memory, attn_arr = self._encoder(self._stories, self._queries)
         
         # train_op 
         loss_op, logits = self._decoder_train(encoder_states, memory)
