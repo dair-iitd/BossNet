@@ -259,11 +259,11 @@ class MemN2NGeneratorDialog(object):
                 helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
 
                 # make the shape concerete to prevent the error
-                #reshaped_memory = tf.reshape(memory,[self._batch_size, -1, self._embedding_size])
-                #attention_mechanism = tf.contrib.seq2seq.LuongAttention(self._embedding_size, reshaped_memory)
-                #decoder_cell_with_attn = tf.contrib.seq2seq.AttentionWrapper(self.decoder_cell, attention_mechanism, name="cell_with_attn")
+                reshaped_memory = tf.reshape(memory,[self._batch_size, -1, self._embedding_size])
+                self.attention_mechanism = tf.contrib.seq2seq.LuongAttention(self._embedding_size, reshaped_memory)
+                decoder_cell_with_attn = tf.contrib.seq2seq.AttentionWrapper(self.decoder_cell, self.attention_mechanism)
 
-                decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, encoder_states, output_layer=self.projection_layer)
+                decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell_with_attn, helper, encoder_states, output_layer=self.projection_layer)
                 outputs,_ ,_ = tf.contrib.seq2seq.dynamic_decode(decoder)
                 logits = outputs.rnn_output
                 max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
