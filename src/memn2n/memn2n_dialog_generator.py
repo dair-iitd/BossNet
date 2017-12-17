@@ -51,7 +51,8 @@ class MemN2NGeneratorDialog(object):
                  session=tf.Session(),
                  name='MemN2N',
                  task_id=1,
-                 use_beam_search=False):
+                 use_beam_search=False,
+                 use_attention=False):
         """Creates an End-To-End Memory Network
 
         Args:
@@ -105,6 +106,7 @@ class MemN2NGeneratorDialog(object):
         self._candidate_sentence_size = candidate_sentence_size
         self._beam_width = 10
         self._use_beam_search = use_beam_search
+        self._use_attention = use_attention
         
         # add unk and eos
         self.UNK = decoder_vocab_to_index["UNK"]
@@ -123,7 +125,7 @@ class MemN2NGeneratorDialog(object):
                                           str(task_id), 'summary_output', timestamp)
 
         encoder_states, memory, attn_arr = self._encoder(self._stories, self._queries)
-        
+            
         # train_op 
         loss_op, logits = self._decoder_train(encoder_states, memory)
         
@@ -140,7 +142,7 @@ class MemN2NGeneratorDialog(object):
         train_op = self._opt.apply_gradients(nil_grads_and_vars, name="train_op")
 
         # predict ops
-        predict_op = self._decoder_runtime(encoder_states)
+        predict_op = self._decoder_runtime(encoder_states, memory)
         
         # assign ops
         self.loss_op = loss_op, logits
@@ -240,7 +242,24 @@ class MemN2NGeneratorDialog(object):
                 u.append(u_k)
             
             return u_k, m, attn_arr
-            
+    
+    def _get_decoder(self, encoder_states, memory, helper, batch_size):
+        with tf.variable_scope(self._name):
+            with tf.variable_scope('decoder'):
+                if self._use_attention:
+                    # make the shape concrete to prevent ValueError caused by (?, ?, ?)
+                    reshaped_memory = tf.reshape(memory,[batch_size, -1, self._embedding_size])
+                    self.attention_mechanism = tf.contrib.seq2seq.LuongAttention(self._embedding_size, reshaped_memory)
+                    decoder_cell_with_attn = tf.contrib.seq2seq.AttentionWrapper(self.decoder_cell, self.attention_mechanism)
+                
+                    # added wrapped_encoder_states to overcome https://github.com/tensorflow/tensorflow/issues/11540
+                    wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
+                    decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
+                else:    
+                    decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, encoder_states, output_layer=self.projection_layer)
+
+                return decoder
+
     def _decoder_train(self, encoder_states, memory):
         
         # encoder_states = batch_size x embedding_size
@@ -258,13 +277,7 @@ class MemN2NGeneratorDialog(object):
                 answer_sizes = tf.reshape(self._answer_sizes,[-1])
                 helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
 
-                # make the shape concerete to prevent the error
-                reshaped_memory = tf.reshape(memory,[self._batch_size, -1, self._embedding_size])
-                self.attention_mechanism = tf.contrib.seq2seq.LuongAttention(self._embedding_size, reshaped_memory)
-                decoder_cell_with_attn = tf.contrib.seq2seq.AttentionWrapper(self.decoder_cell, self.attention_mechanism)
-
-                decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell_with_attn, helper, encoder_states, output_layer=self.projection_layer)
-                outputs,_ ,_ = tf.contrib.seq2seq.dynamic_decode(decoder)
+                outputs,_ ,_ = tf.contrib.seq2seq.dynamic_decode(self._get_decoder(encoder_states, memory, helper, batch_size))
                 logits = outputs.rnn_output
                 max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
                 ans = self._answers[:, :max_length]
@@ -278,7 +291,7 @@ class MemN2NGeneratorDialog(object):
 
         return loss, logits
 
-    def _decoder_runtime(self, encoder_states):
+    def _decoder_runtime(self, encoder_states, memory):
         
         # encoder_states = batch_size x 1
         # answers = batch_size x candidate_sentence_size
@@ -293,8 +306,8 @@ class MemN2NGeneratorDialog(object):
                         self._beam_width, output_layer = self.projection_layer)
                 else:
                     helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
-                    decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, encoder_states,output_layer=self.projection_layer)
-                
+                    decoder = self._get_decoder(encoder_states, memory, helper, batch_size)
+
                 outputs,_,_ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=2*self._candidate_sentence_size)
                 
                 if self._use_beam_search:

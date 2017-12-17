@@ -26,6 +26,7 @@ tf.flags.DEFINE_integer("memory_size", 50, "Maximum size of memory.")
 tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
 tf.flags.DEFINE_boolean('use_beam_search', False, 'if True, uses beam search for dcoding, else uses greedy decoding')
+tf.flags.DEFINE_boolean('use_attention', False, 'if True, uses attention')
 
 # Output Specifications
 tf.flags.DEFINE_boolean('game', False, 'if True, show infinite game results')
@@ -64,6 +65,7 @@ class chatBot(object):
         self.epochs = FLAGS.epochs
         self.embedding_size = FLAGS.embedding_size
         self.use_beam_search= FLAGS.use_beam_search
+        self.use_attention = FLAGS.use_attention
 
         # Create Model Store Directory
         if not os.path.exists(self.model_dir):
@@ -98,7 +100,8 @@ class chatBot(object):
         self.model = MemN2NGeneratorDialog(self.batch_size, self.vocab_size, self.num_cand, self.sentence_size, 
                                            self.embedding_size, self.decoder_vocab_to_index, self.candidate_sentence_size, 
                                            session=self.sess, hops=self.hops, max_grad_norm=self.max_grad_norm, 
-                                           optimizer=self.optimizer, task_id=self.task_id, use_beam_search=self.use_beam_search)
+                                           optimizer=self.optimizer, task_id=self.task_id, use_beam_search=self.use_beam_search,
+                                           use_attention=self.use_attention)
         self.saver = tf.train.Saver(max_to_keep=50)
 
     def build_vocab(self, data):
@@ -157,12 +160,12 @@ class chatBot(object):
                 print('-----------------------')
                 print('Epoch', t)
                 print('Total Cost:', total_cost)
-                print('Training Accuracy:', train_acc)
-                print('Validation Accuracy:', val_acc)
+                print('Training BLEU Score:', train_acc)
+                print('Validation BLEU Score:', val_acc)
                 print('-----------------------')
                 sys.stdout.flush()
                 
-                if val_acc > best_validation_accuracy:
+                if val_acc >= best_validation_accuracy:
                     best_validation_accuracy = val_acc
                     self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
 
@@ -185,7 +188,7 @@ class chatBot(object):
             n_test = len(testS)
             test_preds = self.batch_predict(testS, testQ, testSZ, testQZ, n_test)
             test_acc = bleu_accuracy_score(test_preds,testA, self.decoder_index_to_vocab, self.candidates)
-
+            
             match=0
             total=0
             match_acc=0
