@@ -188,14 +188,27 @@ class MemN2NGeneratorDialog(object):
             self.H = tf.Variable(self._init([self._embedding_size, self._embedding_size]), name="H")
             
             with tf.variable_scope("encoder"):
-                self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size/2)
-                self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size/2)
+                self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size)
+                self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size)
 
             with tf.variable_scope('decoder'):
                 self.decoder_cell = tf.contrib.rnn.GRUCell(self._embedding_size)
                 self.projection_layer = layers_core.Dense(self._decoder_vocab_size, use_bias=False)
+
+            with tf.variable_scope('reduce_final_st'):
+                # Define weights and biases to reduce the cell and reduce the state
+                self.w_reduce = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce")
+                self.bias_reduce = tf.Variable(self._init([self._embedding_size]), name="bias_reduce")
                 
         self._nil_vars = set([self.A.name])
+
+    def _reduce_states(self, fw_st, bw_st):
+        with tf.variable_scope('reduce_final_st'):
+
+            # Apply linear layer
+            old_c = tf.concat(axis=1, values=[fw_st, bw_st]) # Concatenation of fw and bw cell
+            new_c = tf.nn.relu(tf.matmul(old_c, self.w_reduce) + self.bias_reduce) # Get new cell from old cell
+            return new_c # Return new cell state
 
     def _encoder(self, stories, queries):
         with tf.variable_scope(self._name):
@@ -208,8 +221,10 @@ class MemN2NGeneratorDialog(object):
             with tf.variable_scope("encoder"):
                 (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, q_emb, sequence_length=q_sizes, dtype=tf.float32)
             (f_state, b_state) = output_states
+            u_0 = self._reduce_states(f_state, b_state)
             # u_0 : batch_size x embedding_size
-            u_0 = tf.concat([f_state, b_state], 1)
+            # u_0 = tf.concat([f_state, b_state], 1)
+
             u = [u_0]
 
             memory_size = tf.shape(stories)[1]
@@ -224,9 +239,11 @@ class MemN2NGeneratorDialog(object):
             with tf.variable_scope("encoder", reuse=True):
                 (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, sentences, sequence_length=sizes, dtype=tf.float32)
             (f_state, b_state) = output_states
+            new_state = self._reduce_states(f_state, b_state)
             
             # m : batch_size x memory_size x embedding_size
-            m = tf.reshape(tf.concat([f_state, b_state], 1), [batch_size, memory_size, -1])
+            # m = tf.reshape(tf.concat([f_state, b_state], 1), [batch_size, memory_size, -1])
+            m = tf.reshape(new_state, [batch_size, memory_size, -1])
             for hop_index in range(self._hops):
                     
                 # hack to get around no reduce_dot
@@ -284,7 +301,7 @@ class MemN2NGeneratorDialog(object):
                 answer_sizes = tf.reshape(self._answer_sizes,[-1])
                 helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
 
-                outputs,_ ,_ = tf.contrib.seq2seq.dynamic_decode(self._get_decoder(encoder_states, memory, helper, batch_size))
+                outputs,_ ,_ = tf.contrib.seq2seq.dynamic_decode(self._get_decoder(encoder_states, memory, helper, batch_size), impute_finished=True)
                 logits = outputs.rnn_output
                 max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
                 ans = self._answers[:, :max_length]
