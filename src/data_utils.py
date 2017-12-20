@@ -8,11 +8,27 @@ import nltk
 from nltk.translate.bleu_score import corpus_bleu
 from string import punctuation
 
-# Global Variables
+__all__ =  ["load_candidates", 
+            "get_decoder_vocab", 
+            "load_dialog_task", 
+            "tokenize", 
+            "vectorize_data",
+            "vectorize_data_with_surface_form", 
+            "pad_to_answer_size", 
+            "substring_accuracy_score"]
+
+###################################################################################################
+#########                                  Global Variables                              ##########
+###################################################################################################
+
 stop_words=set(["a","an","the"])
 UNK_INDEX = 0
 GO_SYMBOL_INDEX = 1
 EOS_INDEX = 2
+
+###################################################################################################
+#########                                 Dialog Manipulators                            ##########
+###################################################################################################
 
 def load_candidates(data_dir, task_id):
     ''' 
@@ -281,6 +297,11 @@ def vectorize_data_with_surface_form(data, word_idx, sentence_size, batch_size, 
 
     return S, Q, A, SZ, QZ, CZ, S_in_readable_form, Q_in_readable_form, last_db_results, dialogIDs
 
+
+###################################################################################################
+#########                           Evaluation Metrics & Helpers                         ##########
+###################################################################################################
+
 def pad_to_answer_size(pred, size):
     for i, list in enumerate(pred):
         if len(list) >= size:
@@ -290,19 +311,31 @@ def pad_to_answer_size(pred, size):
             pred[i] = np.append(list, arr)
     return pred
 
-def bleu_accuracy_score(preds, vals, idx2voc, candidates):
+def is_Sublist(l, s):
+    sub_set = False
+    if s == []: sub_set = True
+    elif s == l: sub_set = True
+    elif len(s) > len(l): sub_set = False
+    else:
+        for i in range(len(l)):
+            if l[i] == s[0]:
+                n = 1
+                if n >= len(s) or (i+n) >= len(l): break
+                while (n < len(s)) and (l[i+n] == s[n]):
+                    n += 1
+                    if n >= len(s) or (i+n) >= len(l): break
+                if n == len(s):
+                    sub_set = True
+
+    return sub_set
+
+def substring_accuracy_score(preds, vals):
     total_score = 0.0
     for pred, val in zip(preds, vals):
-        reference = [idx2voc[x] for x in pred if x != EOS_INDEX and x != UNK_INDEX and x != -1]
-        hypothesis = [idx2voc[x] for x in val if x != EOS_INDEX and x != UNK_INDEX]
-        score = corpus_bleu([[reference]], [hypothesis])
-        if score > 0.9:
+        reference = [x for x in pred if x != EOS_INDEX and x != UNK_INDEX and x != -1]
+        hypothesis = [x for x in val if x != EOS_INDEX and x != UNK_INDEX]
+        if is_Sublist(reference, hypothesis) == True:
             total_score += 1.0
 
     return (float(total_score) / len(preds))*100
-
-
-
-
-
 

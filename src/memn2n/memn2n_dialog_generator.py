@@ -7,6 +7,9 @@ import numpy as np
 from six.moves import range
 from datetime import datetime
 
+###################################################################################################
+#########                                  Helper Functions                              ##########
+###################################################################################################
 
 def zero_nil_slot(t, name=None):
     """
@@ -37,6 +40,10 @@ def add_gradient_noise(t, stddev=1e-3, name=None):
         gn = tf.random_normal(tf.shape(t), stddev=stddev)
         return tf.add(t, gn, name=name)
 
+
+###################################################################################################
+#########                                     Model Class                                ##########
+###################################################################################################
 
 class MemN2NGeneratorDialog(object):
     """End-To-End Memory Network with a generative decoder."""

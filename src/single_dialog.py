@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-from data_utils import get_decoder_vocab, load_dialog_task, vectorize_data, load_candidates, vectorize_data_with_surface_form, tokenize, pad_to_answer_size, bleu_accuracy_score
+from data_utils import *
 from sklearn import metrics
 from memn2n.memn2n_dialog_generator import MemN2NGeneratorDialog
 from itertools import chain
@@ -123,12 +123,14 @@ class chatBot(object):
         '''
             Train the model
         '''
+        # Get Data in usable form
         trainS, trainQ, trainA, trainSZ, trainQZ, trainCZ = vectorize_data(self.trainData, self.word_idx, self.sentence_size, 
                                                             self.batch_size, self.num_cand, self.memory_size, 
                                                             self.decoder_vocab_to_index, self.candidate_sentence_size)
         valS, valQ, valA, valSZ, valQZ, valCZ = vectorize_data(self.valData, self.word_idx, self.sentence_size, 
                                                 self.batch_size, self.num_cand, self.memory_size, 
                                                 self.decoder_vocab_to_index, self.candidate_sentence_size)
+        # Create Batches
         n_train = len(trainS)
         n_val = len(valS)
         print("Training Size", n_train)
@@ -139,6 +141,7 @@ class chatBot(object):
         batches = [(start, end) for start, end in batches]
         best_validation_accuracy = 0
 
+        # Train Model in Batch Mode
         for t in range(1, self.epochs + 1):
             np.random.shuffle(batches)
             total_cost = 0.0
@@ -152,19 +155,21 @@ class chatBot(object):
                 cost_t, logits = self.model.batch_fit(s, q, a, sizes, qsize, asize)
                 total_cost += cost_t
             
+            # Evaluate Model
             if t % self.evaluation_interval == 0:
                 train_preds = self.batch_predict(trainS, trainQ, trainSZ, trainQZ, n_train)
                 val_preds = self.batch_predict(valS, valQ, valSZ, valQZ, n_val)
-                train_acc = bleu_accuracy_score(train_preds, trainA, self.decoder_index_to_vocab, self.candidates)
-                val_acc = bleu_accuracy_score(val_preds, valA, self.decoder_index_to_vocab, self.candidates)
+                train_acc = substring_accuracy_score(train_preds, trainA)
+                val_acc = substring_accuracy_score(val_preds, valA)
                 print('-----------------------')
                 print('Epoch', t)
                 print('Total Cost:', total_cost)
-                print('Training BLEU Score:', train_acc)
-                print('Validation BLEU Score:', val_acc)
+                print('Training Accuracy Score:', train_acc)
+                print('Validation Accuracy Score:', val_acc)
                 print('-----------------------')
                 sys.stdout.flush()
                 
+                # Save best model
                 if val_acc >= best_validation_accuracy:
                     best_validation_accuracy = val_acc
                     self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
@@ -187,16 +192,13 @@ class chatBot(object):
                 self.testData, self.word_idx, self.sentence_size, self.batch_size, self.num_cand, self.memory_size, self.decoder_vocab_to_index, self.candidate_sentence_size)
             n_test = len(testS)
             test_preds = self.batch_predict(testS, testQ, testSZ, testQZ, n_test)
-            test_acc = bleu_accuracy_score(test_preds,testA, self.decoder_index_to_vocab, self.candidates)
+            test_acc = substring_accuracy_score(test_preds,testA)
             
             match=0
             total=0
             match_acc=0
             total_acc=0
             all_data_points=[]
-
-            #attn_arry_size = self.hops*3
-            attn_arry_size = self.hops
             
             for idx, val in enumerate(test_preds):
                 answer = self.indx2candid[testA[idx].item(0)]
@@ -214,43 +216,14 @@ class chatBot(object):
                 else:
                     data_point['matched']=False
                 data_point['context-length']=len(S_in_readable_form[idx])
-                    
-                if len(S_in_readable_form[idx]) <= 500:
-                    for hop_index in range(0, attn_arry_size):
-                        attn_tuples_list = []
-                        attn_arr = attn_weights[hop_index][idx]
-                        for mem_index in range(0, len(attn_arr)):
-                            if(mem_index > len(S_in_readable_form[idx])-1):
-                                attn_tuples_list.append((mem_index, attn_arr[mem_index], "NONE"))
-                            else:
-                                if(len(S_in_readable_form[idx]) > 50):
-                                    attn_tuples_list.append((mem_index, attn_arr[mem_index], S_in_readable_form[idx][len(S_in_readable_form[idx])-50+mem_index]))
-                                else:
-                                    attn_tuples_list.append((mem_index, attn_arr[mem_index], S_in_readable_form[idx][mem_index]))
-                        sorted_tuple = sorted(attn_tuples_list, key=itemgetter(1), reverse=True)
-                        attn_list=[]
-                        for tuple_idx in range(0, 10):
-                            if len(sorted_tuple) > tuple_idx and sorted_tuple[tuple_idx][1] > 0.001:
-                                attn_list.append(str(sorted_tuple[tuple_idx][1]) + ' : ' + sorted_tuple[tuple_idx][2])
-                        data_point['attn-hop-' + str(hop_index)]=attn_list
-                
-                # for hop_index in range(0, attn_arry_size):
-                #     print(beta_arr[hop_index][idx][0])
-                #     data_point['beta-' + str(hop_index)]=str(beta_arr[hop_index][idx][0])
-                
-                ranked_candidateids = ranked_candidates_list[idx]
-                ranked_candidates = []
-                for i in range(len(ranked_candidateids)):
-                    ranked_candidates.append(self.indx2candid[ranked_candidateids[i]])
-                #data_point['ranked-candidates']=ranked_candidates
+
                 all_data_points.append(data_point)
 
                 if (self.task_id==3 or self.task_id==5) and "what do you think of this option:" in answer and 'dialog-template' in self.data_dir:
                     dbset=set()
                     for counter_temp, element in enumerate(S_in_readable_form[idx]):
                         if counter_temp%8 == 0 and '\t' not in element :
-                           dbset.add('loc_' + str(counter_temp+1))
-                            
+                           dbset.add('loc_' + str(counter_temp+1))   
                     total = total+1
                     pred_str=self.indx2candid[val]
                     if "what do you think of this option:" in pred_str:
@@ -265,7 +238,6 @@ class chatBot(object):
                     splitstr=last_db_results[idx].split( )
                     for i in range(2, len(splitstr)):
                         dbset.add(splitstr[i][:splitstr[i].index('(')])
-                    
                     total = total+1
                     pred_str=self.indx2candid[val]
                     if "what do you think of this option:" in pred_str:
@@ -330,6 +302,9 @@ class chatBot(object):
             print("------------------------")
 
     def batch_predict(self, S, Q, SZ, QZ, n):
+        '''
+            Get Predictions for a Batch of Input Data
+        '''
         preds = []
         for start in range(0, n, self.batch_size):
             end = start + self.batch_size
