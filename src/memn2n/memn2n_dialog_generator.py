@@ -274,7 +274,7 @@ class MemN2NGeneratorDialog(object):
                     # make the shape concrete to prevent ValueError caused by (?, ?, ?)
                     reshaped_memory = tf.reshape(memory,[batch_size, -1, self._embedding_size])
                     self.attention_mechanism = tf.contrib.seq2seq.LuongAttention(self._embedding_size, reshaped_memory)
-                    decoder_cell_with_attn = tf.contrib.seq2seq.AttentionWrapper(self.decoder_cell, self.attention_mechanism)
+                    decoder_cell_with_attn = tf.contrib.seq2seq.AttentionWrapper(self.decoder_cell, self.attention_mechanism, output_attention=False)
                 
                     # added wrapped_encoder_states to overcome https://github.com/tensorflow/tensorflow/issues/11540
                     wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
