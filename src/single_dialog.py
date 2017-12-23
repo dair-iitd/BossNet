@@ -7,7 +7,7 @@ from memn2n.memn2n_dialog_generator import MemN2NGeneratorDialog
 from itertools import chain
 from six.moves import range, reduce
 from operator import itemgetter
-from data import Data
+from data import Data, Batch
 import sys
 import tensorflow as tf
 import numpy as np
@@ -150,8 +150,6 @@ class chatBot(object):
             if t % self.evaluation_interval == 0:
                 train_acc = self.batch_predict(Data_train, n_train)
                 val_acc = self.batch_predict(Data_val, n_val)
-                train_acc = substring_accuracy_score(train_preds, Data_train.answers)
-                val_acc = substring_accuracy_score(val_preds, Data_val.answers)
                 print('-----------------------')
                 print('Epoch', t)
                 print('Total Cost:', total_cost)
@@ -196,13 +194,14 @@ class chatBot(object):
         np.random.shuffle(batches)
         total_cost = 0.0
         for start, end in batches:
-            s = data.stories[start:end]
-            q = data.queries[start:end]
-            a = data.answers[start:end]
-            sizes = data.story_sizes[start:end]
-            qsize = data.query_sizes[start:end]
-            asize = data.answer_sizes[start:end]
-            cost_t, logits = self.model.batch_fit(s, q, a, sizes, qsize, asize)
+            # s = data.stories[start:end]
+            # q = data.queries[start:end]
+            # a = data.answers[start:end]
+            # sizes = data.story_sizes[start:end]
+            # qsize = data.query_sizes[start:end]
+            # asize = data.answer_sizes[start:end]
+            # cost_t, logits = self.model.batch_fit(s, q, a, sizes, qsize, asize)
+            cost_t, logits = self.model.batch_fit(Batch(data, start, end))
             total_cost += cost_t
         return total_cost
 
@@ -213,11 +212,12 @@ class chatBot(object):
         preds = []
         for start in range(0, n, self.batch_size):
             end = start + self.batch_size
-            s = data.stories[start:end]
-            q = data.queries[start:end]
-            sizes = data.story_sizes[start:end]
-            qsize = data.query_sizes[start:end]
-            pred = self.model.predict(s, q, sizes, qsize)
+            # s = data.stories[start:end]
+            # q = data.queries[start:end]
+            # sizes = data.story_sizes[start:end]
+            # qsize = data.query_sizes[start:end]
+            # pred = self.model.predict(s, q, sizes, qsize)
+            pred = self.model.predict(Batch(data, start, end))
             preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
         return substring_accuracy_score(preds, data.answers)
 

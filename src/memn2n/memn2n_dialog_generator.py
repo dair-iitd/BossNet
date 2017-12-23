@@ -342,7 +342,24 @@ class MemN2NGeneratorDialog(object):
                 
         return translations
 
-    def batch_fit(self, stories, queries, answers, sentence_sizes, query_sizes, answer_sizes):
+    def _make_feed_dict(self, batch, train=True):
+        """Make a feed dictionary mapping parts of the batch to the appropriate placeholders.
+
+        Args:
+          batch: Batch object
+          just_enc: Boolean. If True, only feed the parts needed for the encoder.
+        """
+        feed_dict = {}
+        feed_dict[self._stories] = batch.stories
+        feed_dict[self._queries] = batch.queries
+        feed_dict[self._sentence_sizes] = batch.story_sizes
+        feed_dict[self._query_sizes] = batch.query_sizes
+        if train:
+          feed_dict[self._answers] = batch.answers
+          feed_dict[self._answer_sizes] = batch.answer_sizes
+        return feed_dict
+
+    def batch_fit(self, batch):
         """Runs the training algorithm over the passed batch
 
         Args:
@@ -356,12 +373,11 @@ class MemN2NGeneratorDialog(object):
         Returns:
             loss: floating-point number, the loss computed for the batch
         """
-        feed_dict = {self._stories: stories, self._queries: queries, self._answers: answers, 
-                self._sentence_sizes: sentence_sizes, self._query_sizes: query_sizes, self._answer_sizes: answer_sizes}
+        feed_dict = self._make_feed_dict(batch)
         loss, _ = self._sess.run([self.loss_op, self.train_op], feed_dict=feed_dict)
         return loss
 
-    def predict(self, stories, queries, sentence_sizes, query_sizes):
+    def predict(self, batch):
         """Predicts answers as one-hot encoding.
 
         Args:
@@ -373,5 +389,5 @@ class MemN2NGeneratorDialog(object):
         Returns:
             answers: Tensor (None, vocab_size)
         """
-        feed_dict = {self._stories: stories, self._queries: queries, self._sentence_sizes: sentence_sizes, self._query_sizes: query_sizes}
+        feed_dict = self._make_feed_dict(batch, train=False)
         return self._sess.run(self.predict_op, feed_dict=feed_dict)

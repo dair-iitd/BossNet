@@ -156,3 +156,31 @@ class Data(object):
             A_in_readable_form.append(' '.join([str(x) for x in answer]))
 
         return A, AZ, A_in_readable_form 
+
+class Batch(Data):
+
+    def __init__(self, data, start, end):
+
+        self._stories = data.stories[start:end]
+
+        self._queries = data.queries[start:end]
+
+        self._answers = data.answers[start:end]
+
+        self._story_sizes = data.story_sizes[start:end]
+
+        self._query_sizes = data.query_sizes[start:end]
+
+        self._answer_sizes = data.answer_sizes[start:end]
+
+        self._read_stories = data.readable_stories[start:end]
+
+        self._read_queries = data.readable_queries[start:end]
+
+        self._read_answers = data.readable_answers[start:end]
+
+        self._oov_ids = data.oov_ids[start:end]
+
+        self._oov_sizes = data.oov_sizes[start:end]
+
+        self._dialog_ids = data.dialog_ids[start:end]
