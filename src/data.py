@@ -1,8 +1,9 @@
 import numpy as np
 
-UNK_INDEX = 0
-GO_SYMBOL_INDEX = 1
-EOS_INDEX = 2
+PAD_INDEX = 0
+UNK_INDEX = 1
+GO_SYMBOL_INDEX = 2
+EOS_INDEX = 3
 
 class Data(object):
 
@@ -16,10 +17,14 @@ class Data(object):
                  decoder_vocab, 
                  candidate_sentence_size):
 
-        self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids = self._extract_data_items(data)
-        self._stories, self._story_sizes, self._read_stories, self._oov_ids, self._oov_sizes = self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, candidates_size, max_memory_size, decoder_vocab)
-        self._queries, self._query_sizes, self._read_queries = self._vectorize_queries(self._queries_ext, word_idx, sentence_size)
-        self._answers, self._answer_sizes, self._read_answers = self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size)
+        self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids = \
+            self._extract_data_items(data)
+        self._stories, self._story_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words = \
+            self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, candidates_size, max_memory_size, decoder_vocab)
+        self._queries, self._query_sizes, self._read_queries = \
+            self._vectorize_queries(self._queries_ext, word_idx, sentence_size)
+        self._answers, self._answer_sizes, self._read_answers = \
+            self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, candidates_size)
 
     @property
     def stories(self):
@@ -83,6 +88,7 @@ class Data(object):
         S_in_readable_form = []
         OOV_ids = []
         OOV_size = []
+        OOV_words = []
 
         for i, story in enumerate(stories):
             if i % batch_size == 0:
@@ -95,19 +101,25 @@ class Data(object):
 
             for i, sentence in enumerate(story, 1):
                 ls = max(0, sentence_size - len(sentence))
-                ss.append([word_idx[w] if w in word_idx else 0 for w in sentence] + [0] * ls)
+                ss.append([word_idx[w] if w in word_idx else UNK_INDEX for w in sentence] + [PAD_INDEX] * ls)
                 sizes.append(len(sentence))
 
                 story_element = ' '.join([str(x) for x in sentence[:-2]])
                 story_string.append(' '.join([str(x) for x in sentence[-2:]]) + ' : ' + story_element)
 
+                oov_sentence_ids = []
                 for w in sentence:
-                    if w not in word_idx:
+                    if w not in decoder_vocab:
                         if w not in oov_words:
-                            oov_ids.append(candidates_size + len(oov_words))
+                            oov_sentence_ids.append(candidates_size + len(oov_words))
                             oov_words.append(w)
                         else:
-                            oov_ids.append(candidates_size + oov_words.index(w))
+                            oov_sentence_ids.append(candidates_size + oov_words.index(w))
+                    else:
+                        oov_sentence_ids.append(decoder_vocab[w])
+                oov_sentence_ids = oov_sentence_ids + [PAD_INDEX] * ls
+                oov_ids.append(oov_sentence_ids)
+
 
             # take only the most recent sentences that fit in memory
             ss = ss[::-1][:memory_size][::-1]
@@ -124,8 +136,9 @@ class Data(object):
             S_in_readable_form.append(story_string)
             OOV_ids.append(np.array(oov_ids))
             OOV_size.append(np.array(len(oov_words)))
+            OOV_words.append(np.array(oov_words))
 
-        return S, SZ, S_in_readable_form, OOV_ids, OOV_size
+        return S, SZ, S_in_readable_form, OOV_ids, OOV_size, OOV_words
 
     def _vectorize_queries(self, queries, word_idx, sentence_size):
         Q = []
@@ -142,14 +155,22 @@ class Data(object):
 
         return Q, QZ, Q_in_readable_form
 
-    def _vectorize_answers(self, answers, decoder_vocab, candidate_sentence_size):
+    def _vectorize_answers(self, answers, decoder_vocab, candidate_sentence_size, OOV_words, candidates_size):
         A = []
         AZ = []
         A_in_readable_form = []
 
         for i, answer in enumerate(answers):
             aq = max(0, candidate_sentence_size - len(answer) - 1)
-            a = [decoder_vocab[w] if w in decoder_vocab else 0 for w in answer] + [EOS_INDEX] + [0] * aq
+            a = []
+            for w in answer:
+                if w in decoder_vocab:
+                    a.append(decoder_vocab[w])
+                elif w in OOV_words[i]:
+                    a.append(candidates_size + OOV_words[i].index(w))
+                else:
+                    a.append(UNK_INDEX)
+            a = a + [EOS_INDEX] + [0] * aq
 
             A.append(np.array(a))
             AZ.append(np.array([len(answer)+1]))

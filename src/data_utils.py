@@ -18,9 +18,10 @@ __all__ =  ["load_candidates",
 ###################################################################################################
 
 stop_words=set(["a","an","the"])
-UNK_INDEX = 0
-GO_SYMBOL_INDEX = 1
-EOS_INDEX = 2
+PAD_INDEX = 0
+UNK_INDEX = 1
+GO_SYMBOL_INDEX = 2
+EOS_INDEX = 3
 
 ###################################################################################################
 #########                                 Dialog Manipulators                            ##########
@@ -53,6 +54,9 @@ def get_decoder_vocab(data_dir, task_id):
     assert task_id > 0 and task_id < 7
     decoder_vocab_to_index={}
     decoder_index_to_vocab={}
+    # Pad Symbol
+    decoder_vocab_to_index['PAD']=PAD_INDEX
+    decoder_index_to_vocab[PAD_INDEX]='PAD'
     # Unknown Symbol
     decoder_vocab_to_index['UNK']=UNK_INDEX
     decoder_index_to_vocab[UNK_INDEX]='UNK'
@@ -167,7 +171,7 @@ def pad_to_answer_size(pred, size):
         if len(list) >= size:
             pred[i] = list[:size]
         else:
-            arr = np.array([0] * (size - len(list)))
+            arr = np.array([PAD_INDEX] * (size - len(list)))
             pred[i] = np.append(list, arr)
     return pred
 
@@ -192,8 +196,8 @@ def is_Sublist(l, s):
 def substring_accuracy_score(preds, vals):
     total_score = 0.0
     for pred, val in zip(preds, vals):
-        reference = [x for x in pred if x != EOS_INDEX and x != UNK_INDEX and x != -1]
-        hypothesis = [x for x in val if x != EOS_INDEX and x != UNK_INDEX]
+        reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
+        hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
         if is_Sublist(reference, hypothesis) == True:
             total_score += 1.0
 
