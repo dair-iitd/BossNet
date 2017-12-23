@@ -7,6 +7,7 @@ from memn2n.memn2n_dialog_generator import MemN2NGeneratorDialog
 from itertools import chain
 from six.moves import range, reduce
 from operator import itemgetter
+from data import Data
 import sys
 import tensorflow as tf
 import numpy as np
@@ -124,15 +125,15 @@ class chatBot(object):
             Train the model
         '''
         # Get Data in usable form
-        trainS, trainQ, trainA, trainSZ, trainQZ, trainCZ = vectorize_data(self.trainData, self.word_idx, self.sentence_size, 
-                                                            self.batch_size, self.num_cand, self.memory_size, 
-                                                            self.decoder_vocab_to_index, self.candidate_sentence_size)
-        valS, valQ, valA, valSZ, valQZ, valCZ = vectorize_data(self.valData, self.word_idx, self.sentence_size, 
-                                                self.batch_size, self.num_cand, self.memory_size, 
-                                                self.decoder_vocab_to_index, self.candidate_sentence_size)
+        Data_train = Data(self.trainData, self.word_idx, self.sentence_size, 
+                          self.batch_size, self.num_cand, self.memory_size, 
+                          self.decoder_vocab_to_index, self.candidate_sentence_size)
+        Data_val = Data(self.valData, self.word_idx, self.sentence_size, 
+                        self.batch_size, self.num_cand, self.memory_size, 
+                        self.decoder_vocab_to_index, self.candidate_sentence_size)
         # Create Batches
-        n_train = len(trainS)
-        n_val = len(valS)
+        n_train = len(Data_train.stories)
+        n_val = len(Data_val.stories)
         print("Training Size", n_train)
         print("Validation Size", n_val)
         tf.set_random_seed(self.random_state)
@@ -143,24 +144,14 @@ class chatBot(object):
 
         # Train Model in Batch Mode
         for t in range(1, self.epochs + 1):
-            np.random.shuffle(batches)
-            total_cost = 0.0
-            for start, end in batches:
-                s = trainS[start:end]
-                q = trainQ[start:end]
-                a = trainA[start:end]
-                sizes = trainSZ[start:end]
-                qsize = trainQZ[start:end]
-                asize = trainCZ[start:end]
-                cost_t, logits = self.model.batch_fit(s, q, a, sizes, qsize, asize)
-                total_cost += cost_t
+            total_cost = self.batch_train(Data_train, batches)
             
             # Evaluate Model
             if t % self.evaluation_interval == 0:
-                train_preds = self.batch_predict(trainS, trainQ, trainSZ, trainQZ, n_train)
-                val_preds = self.batch_predict(valS, valQ, valSZ, valQZ, n_val)
-                train_acc = substring_accuracy_score(train_preds, trainA)
-                val_acc = substring_accuracy_score(val_preds, valA)
+                train_acc = self.batch_predict(Data_train, n_train)
+                val_acc = self.batch_predict(Data_val, n_val)
+                train_acc = substring_accuracy_score(train_preds, Data_train.answers)
+                val_acc = substring_accuracy_score(val_preds, Data_val.answers)
                 print('-----------------------')
                 print('Epoch', t)
                 print('Total Cost:', total_cost)
@@ -188,133 +179,47 @@ class chatBot(object):
         if self.isInteractive:
             self.interactive()
         else:
-            testS, testQ, testA, testSZ, testQZ, testCZ, S_in_readable_form, Q_in_readable_form, last_db_results, dialogIDs = vectorize_data_with_surface_form(
-                self.testData, self.word_idx, self.sentence_size, self.batch_size, self.num_cand, self.memory_size, self.decoder_vocab_to_index, self.candidate_sentence_size)
-            n_test = len(testS)
-            test_preds = self.batch_predict(testS, testQ, testSZ, testQZ, n_test)
-            test_acc = substring_accuracy_score(test_preds,testA)
-            
-            match=0
-            total=0
-            match_acc=0
-            total_acc=0
-            all_data_points=[]
-            
-            for idx, val in enumerate(test_preds):
-                answer = self.indx2candid[testA[idx].item(0)]
-                data_point={}
-                context=[]
-                for _, element in enumerate(S_in_readable_form[idx]):
-                    context.append(element)
-                data_point['context']=context
-                data_point['query']=Q_in_readable_form[idx]
-                data_point['answer']=answer
-                data_point['prediction']=self.indx2candid[val]
-                data_point['dialog-id']=dialogIDs[idx]
-                if data_point['prediction'] == answer:
-                    data_point['matched']=True
-                else:
-                    data_point['matched']=False
-                data_point['context-length']=len(S_in_readable_form[idx])
-
-                all_data_points.append(data_point)
-
-                if (self.task_id==3 or self.task_id==5) and "what do you think of this option:" in answer and 'dialog-template' in self.data_dir:
-                    dbset=set()
-                    for counter_temp, element in enumerate(S_in_readable_form[idx]):
-                        if counter_temp%8 == 0 and '\t' not in element :
-                           dbset.add('loc_' + str(counter_temp+1))   
-                    total = total+1
-                    pred_str=self.indx2candid[val]
-                    if "what do you think of this option:" in pred_str:
-                        pred_restaurant=pred_str[34:].strip()
-                        if pred_restaurant in dbset:
-                            match=match+1
-                        if data_point['prediction'] == answer:
-                            match_acc = match_acc+1
-
-                if (self.task_id==3 or self.task_id==5) and "what do you think of this option:" in answer and 'dialog-template' not in self.data_dir:
-                    dbset=set()
-                    splitstr=last_db_results[idx].split( )
-                    for i in range(2, len(splitstr)):
-                        dbset.add(splitstr[i][:splitstr[i].index('(')])
-                    total = total+1
-                    pred_str=self.indx2candid[val]
-                    if "what do you think of this option:" in pred_str:
-                        pred_restaurant=pred_str[34:].strip()
-                        if pred_restaurant in dbset:
-                            match=match+1
-                        if data_point['prediction'] == answer:
-                            match_acc = match_acc+1
-            
-            file_prefix = self.logs_dir + "task" + str(FLAGS.task_id) + "_data-dir-" + filter(None, FLAGS.data_dir.split('/'))[-1] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops)
-            file_to_dump_json=  file_prefix + '.json'
-            if self.OOV:
-                file_to_dump_json= file_prefix + '_oov.json'
-            
-            with open(file_to_dump_json, 'w') as f:
-                json.dump(all_data_points, f, indent=4)
+            Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
+                             self.batch_size, self.num_cand, self.memory_size, 
+                             self.decoder_vocab_to_index, self.candidate_sentence_size)
+            n_test = len(Data_test.stories)
+            test_acc = self.batch_predict(Data_test, n_test)
 
             print("Test Size      : ", n_test)
-            print("Test Accuracy  : ", test_acc)
-
-            if (self.task_id==3 or self.task_id==5) and 'dialog-template' in self.data_dir:
-                print('Restaurant Recommendation Accuracy : ' + str(match_acc/float(total)) +  " (" +  str(match_acc) +  "/" + str(total) + ")")
-                print('Restaurant Recommendation from Correct Location Accuracy : ' + str(match/float(total)) +  " (" +  str(match) +  "/" + str(total) + ")")
-            if (self.task_id==3 or self.task_id==5) and 'dialog-template' not in self.data_dir:
-                print('Restaurant Recommendation Accuracy : ' + str(match_acc/float(total)) +  " (" +  str(match_acc) +  "/" + str(total) + ")")
-                print('Restaurant Recommendation from DB Accuracy : ' + str(match/float(total)) +  " (" +  str(match) +  "/" + str(total) + ")")
-            
-            if FLAGS.game:
-                if self.task_id==3:
-                    counter = []
-                    query1 = ['no', 'this', 'does', 'not', 'work', 'for', 'me', '$u', '#0']
-                    query2 = ['sure', 'let', 'me', 'find', 'other', 'option', 'for', 'you', '$r', '#0']
-                    for idx in range(0, n_test):
-                        answer = self.indx2candid[testA[idx].item(0)]
-                        if len(answer) > 0:
-                            last = str(answer)
-                            if 'what do you think of this option' in last:
-                                count = 1
-                                s = testS[idx:idx+1]
-                                q = testQ[idx:idx+1]
-                                a = testA[idx]
-                                pred, _, _ = self.model.predict(s, q)
-                                turn = S_in_readable_form[idx][-1]
-                                turn_no = int(turn.split('#')[1].split(' ')[0])
-                                while pred.item(0) != a and count < 100:
-                                    turn_no += 1
-                                    turn_element = "#" + str(turn_no)
-                                    query1[-1] = (turn_element)
-                                    query2[-1] = (turn_element)
-                                    query1_hash = [self.word_idx[w] if w in self.word_idx else 0 for w in query1] + [0] * (self.sentence_size - len(query1))
-                                    query2_hash = [self.word_idx[w] if w in self.word_idx else 0 for w in query2] + [0] * (self.sentence_size - len(query2))
-                                    request_query_append = np.array([query1_hash, query2_hash])
-                                    s = [np.concatenate((s[0], request_query_append))]
-                                    count += 1                   
-                                    pred, _, _ = self.model.predict(s, q)
-                                counter.append(count)
-                    correct_predictions = [x for x in counter if x != 100]
-                    print("Suggestion Game Accuracy :", str(float(len(correct_predictions))/len(counter)) +  " (" +  str(len(correct_predictions)) +  "/" + str(len(counter)) + ")" )
-                    if len(correct_predictions) > 0:
-                        print("Suggestion Game Mean     :", float(sum(correct_predictions))/len(correct_predictions))
-            
+            print("Test Accuracy  : ", test_acc)      
             print("------------------------")
 
-    def batch_predict(self, S, Q, SZ, QZ, n):
+    def batch_train(self, data, batches):
         '''
-            Get Predictions for a Batch of Input Data
+            Train Model for a Batch of Input Data
+        '''
+        np.random.shuffle(batches)
+        total_cost = 0.0
+        for start, end in batches:
+            s = data.stories[start:end]
+            q = data.queries[start:end]
+            a = data.answers[start:end]
+            sizes = data.story_sizes[start:end]
+            qsize = data.query_sizes[start:end]
+            asize = data.answer_sizes[start:end]
+            cost_t, logits = self.model.batch_fit(s, q, a, sizes, qsize, asize)
+            total_cost += cost_t
+        return total_cost
+
+    def batch_predict(self, data, n):
+        '''
+            Get Predictions for Input Data batchwise
         '''
         preds = []
         for start in range(0, n, self.batch_size):
             end = start + self.batch_size
-            s = S[start:end]
-            q = Q[start:end]
-            sizes = SZ[start:end]
-            qsize = QZ[start:end]
+            s = data.stories[start:end]
+            q = data.queries[start:end]
+            sizes = data.story_sizes[start:end]
+            qsize = data.query_sizes[start:end]
             pred = self.model.predict(s, q, sizes, qsize)
             preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
-        return preds
+        return substring_accuracy_score(preds, data.answers)
 
     def close_session(self):
         self.sess.close()

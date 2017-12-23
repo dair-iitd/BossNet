@@ -4,16 +4,12 @@ import os
 import re
 import numpy as np
 import tensorflow as tf
-import nltk
-from nltk.translate.bleu_score import corpus_bleu
 from string import punctuation
 
 __all__ =  ["load_candidates", 
             "get_decoder_vocab", 
             "load_dialog_task", 
             "tokenize", 
-            "vectorize_data",
-            "vectorize_data_with_surface_form", 
             "pad_to_answer_size", 
             "substring_accuracy_score"]
 
@@ -160,142 +156,6 @@ def get_dialogs(f):
     '''
     with open(f) as f:
         return parse_dialogs_per_response(f.readlines())
-
-def vectorize_data(data, word_idx, sentence_size, batch_size, candidates_size, max_memory_size, decoder_vocab, candidate_sentence_size):
-    """
-    Vectorize stories and queries.
-
-    If a sentence length < sentence_size, the sentence will be padded with 0's.
-
-    If a story length < memory_size, the story will be padded with empty memories.
-    Empty memories are 1-D arrays of length sentence_size filled with 0's.
-
-    The answer array is returned as a one-hot encoding.
-    """
-    S = []
-    Q = []
-    A = []
-    SZ = []
-    QZ = []
-    CZ = []
-    data.sort(key=lambda x:len(x[0]),reverse=True)
-    for i, (story, query, answer, start) in enumerate(data):
-        if i%batch_size==0:
-            memory_size=max(1,min(max_memory_size,len(story)))
-        ss = []
-        sizes = []
-        for i, sentence in enumerate(story, 1):
-            ls = max(0, sentence_size - len(sentence))
-            ss.append([word_idx[w] if w in word_idx else 0 for w in sentence] + [0] * ls)
-            sizes.append(len(sentence))
-
-        # take only the most recent sentences that fit in memory
-        ss = ss[::-1][:memory_size][::-1]
-        sizes = sizes[::-1][:memory_size][::-1]
-
-        # pad to memory_size
-        lm = max(0, memory_size - len(ss))
-        for _ in range(lm):
-            ss.append([0] * sentence_size)
-            sizes.append(0)
-
-        lq = max(0, sentence_size - len(query))
-        q = [word_idx[w] if w in word_idx else 0 for w in query] + [0] * lq
-
-        aq = max(0, candidate_sentence_size - len(answer) - 1)
-        a = [decoder_vocab[w] if w in decoder_vocab else 0 for w in answer] + [EOS_INDEX] + [0] * aq
-
-        S.append(np.array(ss))
-        Q.append(np.array(q))
-        A.append(np.array(a))
-        SZ.append(np.array(sizes))
-        QZ.append(np.array([len(query)]))
-        CZ.append(np.array([len(answer)+1]))
-    return S, Q, A, SZ, QZ, CZ
-
-def vectorize_data_with_surface_form(data, word_idx, sentence_size, batch_size, candidates_size, max_memory_size, decoder_vocab, candidate_sentence_size):
-    """
-    Vectorize stories and queries.
-
-    If a sentence length < sentence_size, the sentence will be padded with 0's.
-
-    If a story length < memory_size, the story will be padded with empty memories.
-    Empty memories are 1-D arrays of length sentence_size filled with 0's.
-
-    The answer array is returned as a one-hot encoding.
-    """
-    S = []
-    Q = []
-    A = []
-    SZ = []
-    QZ = []
-    CZ = []
-    S_in_readable_form = []
-    Q_in_readable_form = []
-    dialogIDs = []
-    last_db_results = []
-
-    data.sort(key=lambda x:len(x[0]),reverse=True)
-    for i, (story, query, answer, dialog_id) in enumerate(data):
-        if i%batch_size==0:
-            memory_size=max(1,min(max_memory_size,len(story)))
-        ss = []
-        sizes = []
-        story_string = []
-
-        dbentries =set([])
-        dbEntriesRead=False
-        last_db_result=""
-
-        for i, sentence in enumerate(story, 1):
-            ls = max(0, sentence_size - len(sentence))
-            ss.append([word_idx[w] if w in word_idx else 0 for w in sentence] + [0] * ls)
-            sizes.append(len(sentence))
-
-            story_element = ' '.join([str(x) for x in sentence[:-2]])
-            # if the story element is a database response/result
-            if 'r_' in story_element and 'api_call' not in story_element:
-                dbEntriesRead = True
-                if 'r_rating' in story_element:
-                    dbentries.add( sentence[0] + '(' + sentence[2] + ')')
-            else:
-                if dbEntriesRead:
-                    last_db_result = '$db : ' + ' '.join([str(x) for x in dbentries])
-                    dbentries =set([])
-                    dbEntriesRead = False
-            
-            story_string.append(' '.join([str(x) for x in sentence[-2:]]) + ' : ' + story_element)
-
-        # take only the most recent sentences that fit in memory
-        ss = ss[::-1][:memory_size][::-1]
-        sizes = sizes[::-1][:memory_size][::-1]
-
-        # pad to memory_size
-        lm = max(0, memory_size - len(ss))
-        for _ in range(lm):
-            ss.append([0] * sentence_size)
-            sizes.append(0)
-
-
-        lq = max(0, sentence_size - len(query))
-        q = [word_idx[w] if w in word_idx else 0 for w in query] + [0] * lq
-        
-        aq = max(0, candidate_sentence_size - len(answer))
-        a = [decoder_vocab[w] if w in decoder_vocab else 0 for w in answer] + [0] * aq
-
-        S.append(np.array(ss))
-        Q.append(np.array(q))
-        A.append(np.array(a))
-        SZ.append(np.array(sizes))
-        QZ.append(np.array([len(query)]))
-        CZ.append(np.array([len(answer)]))
-        S_in_readable_form.append(story_string)
-        Q_in_readable_form.append(' '.join([str(x) for x in query]))
-        last_db_results.append(last_db_result)
-
-        dialogIDs.append(dialog_id)
-
-    return S, Q, A, SZ, QZ, CZ, S_in_readable_form, Q_in_readable_form, last_db_results, dialogIDs
 
 
 ###################################################################################################
