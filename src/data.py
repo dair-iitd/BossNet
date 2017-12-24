@@ -101,7 +101,7 @@ class Data(object):
 
             for i, sentence in enumerate(story, 1):
                 ls = max(0, sentence_size - len(sentence))
-                ss.append([word_idx[w] if w in word_idx else UNK_INDEX for w in sentence] + [PAD_INDEX] * ls)
+                ss.append([word_idx[w] if w in word_idx else UNK_INDEX for w in sentence] + [0] * ls)
                 sizes.append(len(sentence))
 
                 story_element = ' '.join([str(x) for x in sentence[:-2]])
@@ -123,12 +123,14 @@ class Data(object):
 
             # take only the most recent sentences that fit in memory
             ss = ss[::-1][:memory_size][::-1]
+            oov_ids = oov_ids[::-1][:memory_size][::-1]
             sizes = sizes[::-1][:memory_size][::-1]
 
             # pad to memory_size
             lm = max(0, memory_size - len(ss))
             for _ in range(lm):
                 ss.append([0] * sentence_size)
+                oov_ids.append([0] * sentence_size)
                 sizes.append(0)
 
             S.append(np.array(ss))
@@ -170,7 +172,7 @@ class Data(object):
                     a.append(candidates_size + OOV_words[i].index(w))
                 else:
                     a.append(UNK_INDEX)
-            a = a + [EOS_INDEX] + [0] * aq
+            a = a + [EOS_INDEX] + [PAD_INDEX] * aq
 
             A.append(np.array(a))
             AZ.append(np.array([len(answer)+1]))
