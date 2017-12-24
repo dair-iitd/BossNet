@@ -107,7 +107,7 @@ class BasicDecoder(Decoder):
     # Return the cell output and the id
     return BasicDecoderOutput(
         rnn_output=self._rnn_output_size(),
-        sample_id=self._helper.sample_ids_shape)
+        sample_id=tensor_shape.TensorShape([]))
 
   @property
   def output_dtype(self):
@@ -117,7 +117,7 @@ class BasicDecoder(Decoder):
     dtype = nest.flatten(self._initial_state)[0].dtype
     return BasicDecoderOutput(
         nest.map_structure(lambda _: dtype, self._rnn_output_size()),
-        self._helper.sample_ids_dtype)
+        dtypes.int32)
 
   def initialize(self, name=None):
     """Initialize the decoder.
