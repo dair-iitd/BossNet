@@ -20,6 +20,8 @@ from __future__ import print_function
 
 import abc
 import six
+import collections
+import tensorflow as tf
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
@@ -32,14 +34,124 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import rnn
 from tensorflow.python.ops import tensor_array_ops
 from tensorflow.python.ops import variable_scope
+from tensorflow.python.ops import rnn_cell_impl
 from tensorflow.python.util import nest
+from tensorflow.python.layers import base as layers_base
+from tensorflow.contrib.seq2seq.python.ops import helper as helper_py
 from tensorflow.contrib.seq2seq.python.ops.decoder import Decoder
 
 
-__all__ = ["dynamic_decode"]
+__all__ = ["BasicDecoder", "dynamic_decode"]
 
 
 _transpose_batch_time = rnn._transpose_batch_time  # pylint: disable=protected-access
+
+class BasicDecoderOutput(
+    collections.namedtuple("BasicDecoderOutput", ("rnn_output", "sample_id"))):
+  pass
+
+
+class BasicDecoder(Decoder):
+  """Basic sampling decoder."""
+
+  def __init__(self, cell, helper, initial_state, output_layer=None):
+    """Initialize BasicDecoder.
+    Args:
+      cell: An `RNNCell` instance.
+      helper: A `Helper` instance.
+      initial_state: A (possibly nested tuple of...) tensors and TensorArrays.
+        The initial state of the RNNCell.
+      output_layer: (Optional) An instance of `tf.layers.Layer`, i.e.,
+        `tf.layers.Dense`. Optional layer to apply to the RNN output prior
+        to storing the result or sampling.
+    Raises:
+      TypeError: if `cell`, `helper` or `output_layer` have an incorrect type.
+    """
+    if not rnn_cell_impl._like_rnncell(cell):  # pylint: disable=protected-access
+      raise TypeError("cell must be an RNNCell, received: %s" % type(cell))
+    if not isinstance(helper, helper_py.Helper):
+      raise TypeError("helper must be a Helper, received: %s" % type(helper))
+    if (output_layer is not None
+        and not isinstance(output_layer, layers_base.Layer)):
+      raise TypeError(
+          "output_layer must be a Layer, received: %s" % type(output_layer))
+    self._cell = cell
+    self._helper = helper
+    self._initial_state = initial_state
+    self._output_layer = output_layer
+
+  @property
+  def batch_size(self):
+    return self._helper.batch_size
+
+  def _rnn_output_size(self):
+    size = self._cell.output_size
+    if self._output_layer is None:
+      return size
+    else:
+      # To use layer's compute_output_shape, we need to convert the
+      # RNNCell's output_size entries into shapes with an unknown
+      # batch size.  We then pass this through the layer's
+      # compute_output_shape and read off all but the first (batch)
+      # dimensions to get the output size of the rnn with the layer
+      # applied to the top.
+      output_shape_with_unknown_batch = nest.map_structure(
+          lambda s: tensor_shape.TensorShape([None]).concatenate(s),
+          size)
+      layer_output_shape = self._output_layer._compute_output_shape(  # pylint: disable=protected-access
+          output_shape_with_unknown_batch)
+      return nest.map_structure(lambda s: s[1:], layer_output_shape)
+
+  @property
+  def output_size(self):
+    # Return the cell output and the id
+    return BasicDecoderOutput(
+        rnn_output=self._rnn_output_size(),
+        sample_id=self._helper.sample_ids_shape)
+
+  @property
+  def output_dtype(self):
+    # Assume the dtype of the cell is the output_size structure
+    # containing the input_state's first component's dtype.
+    # Return that structure and the sample_ids_dtype from the helper.
+    dtype = nest.flatten(self._initial_state)[0].dtype
+    return BasicDecoderOutput(
+        nest.map_structure(lambda _: dtype, self._rnn_output_size()),
+        self._helper.sample_ids_dtype)
+
+  def initialize(self, name=None):
+    """Initialize the decoder.
+    Args:
+      name: Name scope for any created operations.
+    Returns:
+      `(finished, first_inputs, initial_state)`.
+    """
+    return self._helper.initialize() + (self._initial_state,)
+
+  def step(self, time, inputs, state, name=None):
+    """Perform a decoding step.
+    Args:
+      time: scalar `int32` tensor.
+      inputs: A (structure of) input tensors.
+      state: A (structure of) state tensors and TensorArrays.
+      name: Name scope for any created operations.
+    Returns:
+      `(outputs, next_state, next_inputs, finished)`.
+    """
+    with ops.name_scope(name, "BasicDecoderStep", (time, inputs, state)):
+      cell_outputs, cell_state = self._cell(inputs, state)
+      (cell_outputs, attention, p_gens) = cell_outputs
+      if self._output_layer is not None:
+        cell_outputs = self._output_layer(cell_outputs)
+      sample_ids = self._helper.sample(
+          time=time, outputs=cell_outputs, state=cell_state)
+      (finished, next_inputs, next_state) = self._helper.next_inputs(
+          time=time,
+          outputs=cell_outputs,
+          state=cell_state,
+          sample_ids=sample_ids)
+    outputs = BasicDecoderOutput(cell_outputs, sample_ids)
+    return (outputs, attention, p_gens, next_state, next_inputs, finished)
 
 
 def _create_zero_outputs(size, dtype, batch_size):
@@ -59,6 +171,7 @@ def _create_zero_outputs(size, dtype, batch_size):
 
 
 def dynamic_decode(decoder,
+                   attention_size,
                    output_time_major=False,
                    impute_finished=False,
                    maximum_iterations=None,
@@ -136,12 +249,16 @@ def dynamic_decode(decoder,
 
     initial_outputs_ta = nest.map_structure(_create_ta, decoder.output_size,
                                             decoder.output_dtype)
+    initial_attention = nest.map_structure(_create_ta, attention_size,
+                                            dtypes.float32)
+    initial_p_gens = nest.map_structure(_create_ta, 1,
+                                            dtypes.float32)
 
     def condition(unused_time, unused_outputs_ta, unused_state, unused_inputs,
-                  finished, unused_sequence_lengths):
+                  finished, unused_sequence_lengths, attention, p_gens):
       return math_ops.logical_not(math_ops.reduce_all(finished))
 
-    def body(time, outputs_ta, state, inputs, finished, sequence_lengths):
+    def body(time, outputs_ta, state, inputs, finished, sequence_lengths, attention, p_gens):
       """Internal while_loop body.
       Args:
         time: scalar int32 tensor.
@@ -155,7 +272,7 @@ def dynamic_decode(decoder,
           next_sequence_lengths)`.
         ```
       """
-      (next_outputs, decoder_state, next_inputs,
+      (next_outputs, next_attention, next_p_gens, decoder_state, next_inputs,
        decoder_finished) = decoder.step(time, inputs, state)
       next_finished = math_ops.logical_or(decoder_finished, finished)
       if maximum_iterations is not None:
@@ -169,6 +286,8 @@ def dynamic_decode(decoder,
       nest.assert_same_structure(state, decoder_state)
       nest.assert_same_structure(outputs_ta, next_outputs)
       nest.assert_same_structure(inputs, next_inputs)
+      nest.assert_same_structure(attention, next_attention)
+      nest.assert_same_structure(p_gens, next_p_gens)
 
       # Zero out output values past finish
       if impute_finished:
@@ -197,15 +316,19 @@ def dynamic_decode(decoder,
 
       outputs_ta = nest.map_structure(lambda ta, out: ta.write(time, out),
                                       outputs_ta, emit)
+      attention = nest.map_structure(lambda ta, out: ta.write(time, out),
+                                      attention, next_attention)
+      p_gens = nest.map_structure(lambda ta, out: ta.write(time, out),
+                                      p_gens, next_p_gens)
       return (time + 1, outputs_ta, next_state, next_inputs, next_finished,
-              next_sequence_lengths)
+              next_sequence_lengths, attention, p_gens)
 
     res = control_flow_ops.while_loop(
         condition,
         body,
         loop_vars=[
             initial_time, initial_outputs_ta, initial_state, initial_inputs,
-            initial_finished, initial_sequence_lengths,
+            initial_finished, initial_sequence_lengths, initial_attention, initial_p_gens,
         ],
         parallel_iterations=parallel_iterations,
         swap_memory=swap_memory)
@@ -213,6 +336,8 @@ def dynamic_decode(decoder,
     final_outputs_ta = res[1]
     final_state = res[2]
     final_sequence_lengths = res[5]
+    final_attention = res[6]
+    final_p_gens = res[7]
 
     final_outputs = nest.map_structure(lambda ta: ta.stack(), final_outputs_ta)
 
@@ -225,4 +350,4 @@ def dynamic_decode(decoder,
     if not output_time_major:
       final_outputs = nest.map_structure(_transpose_batch_time, final_outputs)
 
-  return final_outputs, final_state, final_sequence_lengths
+  return final_outputs, final_state, final_sequence_lengths, final_attention, final_p_gens

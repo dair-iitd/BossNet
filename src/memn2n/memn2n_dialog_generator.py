@@ -6,8 +6,8 @@ from tensorflow.python.layers import core as layers_core
 import numpy as np
 from six.moves import range
 from datetime import datetime
-from memn2n.dynamic_decoder import dynamic_decode
-from memn2n.attention_wrapper import AttentionWrapper
+from memn2n.dynamic_decoder import *
+from memn2n.attention_wrapper import *
 
 ###################################################################################################
 #########                                  Helper Functions                              ##########
@@ -133,10 +133,10 @@ class MemN2NGeneratorDialog(object):
         self.root_dir = "%s_%s_%s_%s/" % ('task',
                                           str(task_id), 'summary_output', timestamp)
 
-        encoder_states, memory, attn_arr = self._encoder(self._stories, self._queries)
+        encoder_states, line_memory, word_memory, attn_arr = self._encoder(self._stories, self._queries)
             
         # train_op 
-        loss_op, logits = self._decoder_train(encoder_states, memory)
+        loss_op, logits = self._decoder_train(encoder_states, line_memory, word_memory)
         
         # gradient pipeline
         
@@ -151,7 +151,7 @@ class MemN2NGeneratorDialog(object):
         train_op = self._opt.apply_gradients(nil_grads_and_vars, name="train_op")
 
         # predict ops
-        predict_op = self._decoder_runtime(encoder_states, memory)
+        predict_op = self._decoder_runtime(encoder_states, line_memory, word_memory)
         
         # assign ops
         self.loss_op = loss_op, logits
@@ -233,6 +233,7 @@ class MemN2NGeneratorDialog(object):
 
             memory_size = tf.shape(stories)[1]
             batch_size = tf.shape(stories)[0]
+            self._memory_size = memory_size
 
             # stories : batch_size x memory_size x sentence_size
             # m_emb : batch_size x memory_size x sentence_size x embedding_size
@@ -269,26 +270,69 @@ class MemN2NGeneratorDialog(object):
 
                 u.append(u_k)
             
-            return u_k, m, attn_arr
+            return u_k, m, m_emb, attn_arr
+
+    def _calc_final_dist(self, vocab_dists, attn_dists, p_gens):
+        """Calculate the final distribution, for the pointer-generator model
+
+        Args:
+          vocab_dists: The vocabulary distributions. List length max_dec_steps of (batch_size, vsize) arrays. The words are in the order they appear in the vocabulary file.
+          attn_dists: The attention distributions. List length max_dec_steps of (batch_size, attn_len) arrays
+
+        Returns:
+          final_dists: The final distributions. List length max_dec_steps of (batch_size, extended_vsize) arrays.
+        """
+        with tf.variable_scope('final_distribution'):
+            # Multiply vocab dists by p_gen and attention dists by (1-p_gen)
+            vocab_dists = [p_gen * dist for (p_gen,dist) in zip(p_gens, vocab_dists)]
+            attn_dists = [(1-p_gen) * dist for (p_gen,dist) in zip(p_gens, attn_dists)]
+
+            max_oov_len = tf.reduce_max(self._oov_sizes, reduction_indices=[0])
+
+            # Concatenate some zeros to each vocabulary dist, to hold the probabilities for in-article OOV words
+            extended_vsize = self._decoder_vocab_size + max_oov_len # the maximum (over the batch) size of the extended vocabulary
+            extra_zeros = tf.zeros((self._batch_size, max_oov_len))
+            vocab_dists_extended = [tf.concat(axis=1, values=[dist, extra_zeros]) for dist in vocab_dists] # list length max_dec_steps of shape (batch_size, extended_vsize)
+
+            # Project the values in the attention distributions onto the appropriate entries in the final distributions
+            # This means that if a_i = 0.1 and the ith encoder word is w, and w has index 500 in the vocabulary, then we add 0.1 onto the 500th entry of the final distribution
+            # This is done for each decoder timestep.
+            # This is fiddly; we use tf.scatter_nd to do the projection
+            batch_nums = tf.range(0, limit=self._batch_size) # shape (batch_size)
+            batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
+            attention_ids = tf.reshape(self._oov_ids, [self._batch_size, -1])
+            attn_len = tf.shape(attention_ids)[1] # number of states we attend over
+            batch_nums = tf.tile(batch_nums, [1, attn_len]) # shape (batch_size, attn_len)
+            indices = tf.stack( (batch_nums, attention_ids), axis=2) # shape (batch_size, enc_t, 2)
+            shape = [self._batch_size, extended_vsize]
+            attn_dists_projected = [tf.scatter_nd(indices, copy_dist, shape) for copy_dist in attn_dists] # list length max_dec_steps (batch_size, extended_vsize)
+
+            # Add the vocab distributions and the copy distributions together to get the final distributions
+            # final_dists is a list length max_dec_steps; each entry is a tensor shape (batch_size, extended_vsize) giving the final distribution for that decoder timestep
+            # Note that for decoder timesteps and examples corresponding to a [PAD] token, this is junk - ignore.
+            final_dists = [vocab_dist + copy_dist for (vocab_dist,copy_dist) in zip(vocab_dists_extended, attn_dists_projected)]
+
+            return final_dists
     
-    def _get_decoder(self, encoder_states, memory, helper, batch_size):
+    def _get_decoder(self, encoder_states, line_memory, word_memory, helper, batch_size):
         with tf.variable_scope(self._name):
             with tf.variable_scope('decoder'):
                 if self._use_attention:
                     # make the shape concrete to prevent ValueError caused by (?, ?, ?)
-                    reshaped_memory = tf.reshape(memory,[batch_size, -1, self._embedding_size])
-                    self.attention_mechanism = tf.contrib.seq2seq.LuongAttention(self._embedding_size, reshaped_memory)
+                    reshaped_line_memory = tf.reshape(line_memory,[batch_size, -1, self._embedding_size])
+                    reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
+                    self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory)
                     decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, output_attention=False)
                 
                     # added wrapped_encoder_states to overcome https://github.com/tensorflow/tensorflow/issues/11540
                     wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
-                    decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
+                    decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
                 else:    
-                    decoder = tf.contrib.seq2seq.BasicDecoder(self.decoder_cell, helper, encoder_states, output_layer=self.projection_layer)
+                    decoder = BasicDecoder(self.decoder_cell, helper, encoder_states, output_layer=self.projection_layer)
 
                 return decoder
 
-    def _decoder_train(self, encoder_states, memory):
+    def _decoder_train(self, encoder_states, line_memory, word_memory):
         
         # encoder_states = batch_size x embedding_size
         # answers = batch_size x candidate_sentence_size
@@ -305,11 +349,13 @@ class MemN2NGeneratorDialog(object):
                 answer_sizes = tf.reshape(self._answer_sizes,[-1])
                 helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
 
-                outputs,_ ,_ = dynamic_decode(self._get_decoder(encoder_states, memory, helper, batch_size), impute_finished=True)
+                outputs,_,_,attention, p_gens = dynamic_decode(self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size), self._sentence_size*self._memory_size,impute_finished=True)
                 logits = outputs.rnn_output
                 max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
                 ans = self._answers[:, :max_length]
                 
+                # final_dists = self._calc_final_dist(logits, attention, p_gens)
+
                 target_weights = tf.reshape(self._answer_sizes,[-1])
                 target_weights = tf.sequence_mask(target_weights, self._candidate_sentence_size, dtype=tf.float32)
                 target_weights = target_weights[:, :max_length] 
@@ -319,7 +365,7 @@ class MemN2NGeneratorDialog(object):
 
         return loss, logits
 
-    def _decoder_runtime(self, encoder_states, memory):
+    def _decoder_runtime(self, encoder_states, line_memory, word_memory):
         
         # encoder_states = batch_size x 1
         # answers = batch_size x candidate_sentence_size
@@ -334,10 +380,12 @@ class MemN2NGeneratorDialog(object):
                         self._beam_width, output_layer = self.projection_layer)
                 else:
                     helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
-                    decoder = self._get_decoder(encoder_states, memory, helper, batch_size)
+                    decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
 
-                outputs,_,_ = dynamic_decode(decoder, maximum_iterations=2*self._candidate_sentence_size)
+                outputs,_,_,attention, p_gens = dynamic_decode(decoder, self._sentence_size*self._memory_size, maximum_iterations=2*self._candidate_sentence_size)
                 
+                # final_dists = self._calc_final_dist(outputs.rnn_output, attention, p_gens)
+
                 if self._use_beam_search:
                     predicted_ids = outputs.predicted_ids
                     translations = tf.gather(predicted_ids,0,axis=2)
@@ -358,7 +406,7 @@ class MemN2NGeneratorDialog(object):
         feed_dict[self._queries] = batch.queries
         feed_dict[self._sentence_sizes] = batch.story_sizes
         feed_dict[self._query_sizes] = batch.query_sizes
-        # feed_dict[self._oov_ids] = batch.oov_ids
+        feed_dict[self._oov_ids] = batch.oov_ids
         feed_dict[self._oov_sizes] = batch.oov_sizes
         if train:
           feed_dict[self._answers] = batch.answers
