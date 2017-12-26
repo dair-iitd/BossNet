@@ -236,7 +236,6 @@ def dynamic_decode(decoder,
 
     def _shape(batch_size, from_shape):
       if not isinstance(from_shape, tensor_shape.TensorShape):
-        print("No Shape")
         return tensor_shape.TensorShape(None)
       else:
         batch_size = tensor_util.constant_value(
@@ -267,8 +266,8 @@ def dynamic_decode(decoder,
       """
       with tf.variable_scope('final_distribution'):
         vocab_dists = next_outputs.rnn_output
-        # vocab_dists = tf.multiply(vocab_dists, p_gens)
-        one_minus_fn = lambda x: 0*x
+        vocab_dists = tf.multiply(vocab_dists, p_gens)
+        one_minus_fn = lambda x: 1 - x
         p_gens = tf.map_fn(one_minus_fn, p_gens)
         attn_dists = tf.multiply(p_gens, attn_dists)
 
