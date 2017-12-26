@@ -276,108 +276,6 @@ class MemN2NGeneratorDialog(object):
             
             return u_k, m, m_emb, attn_arr
 
-    def _calc_final_dist_loop(self, vocab_dists, attn_dists, p_gens, attention_size):
-
-        # attn_dists = attn_dists.read(0)
-        # tf.Print(attn_dists, [attn_dists])        
-        # print(length)
-        # vocab_dists = tf.transpose(vocab_dists, [1,0,2])
-        # attn_dists = tf.transpose(attn_dists, [1,0,2])
-        # p_gens = tf.transpose(tf.convert_to_tensor(p_gens), [1,0,2])
-        # vocab_dists = tf.unstack(vocab_dists, num=length)
-        # attn_dists = tf.unstack(attn_dists)
-        # p_gens = tf.unstack(p_gens)
-
-        # processed = [] # this will be the list of processed tensors
-        # try:
-        # iter_loop = tf.range(sequence_length)
-        # def loop(num):
-        #     a = vocab_dists.read(num)
-        #     b = attn_dists.read(num)
-        #     c = p_gens.read(num)
-        #     result_tensor = self._calc_final_dist(a, b, c)
-        #     return result_tensor
-        # # except InvalidArgumentError:
-        # #     pass
-        # processed = tf.map_fn(loop, iter_loop)
-
-        # final_dists = processed
-        # output = tf.transpose(tf.concat(processed, 0), [1, 0, 2])
-        final_dists = self._calc_final_dist(vocab_dists, attn_dists, p_gens, attention_size)
-        _transpose_batch_time = rnn._transpose_batch_time
-
-        res = control_flow_ops.while_loop(
-        condition,
-        body,
-        loop_vars=[
-            initial_time, initial_outputs_ta, initial_state, initial_inputs,
-            initial_finished, initial_sequence_lengths, initial_attention, initial_p_gens,
-        ],
-        parallel_iterations=parallel_iterations,
-        swap_memory=swap_memory)
-
-
-        vocab_dists = nest.map_structure(lambda ta: ta.stack(), vocab_dists)
-        vocab_dists = nest.map_structure(_transpose_batch_time, vocab_dists)
-        final_dists = nest.map_structure(_transpose_batch_time, final_dists)
-        return vocab_dists, final_dists
-
-    def _calc_final_dist(self, vocab_dists, attn_dists, p_gens, attention_size):
-        """Calculate the final distribution, for the pointer-generator model
-
-        Args:
-          vocab_dists: The vocabulary distributions. List length max_dec_steps of (batch_size, vsize) arrays. The words are in the order they appear in the vocabulary file.
-          attn_dists: The attention distributions. List length max_dec_steps of (batch_size, attn_len) arrays
-
-        Returns:
-          final_dists: The final distributions. List length max_dec_steps of (batch_size, extended_vsize) arrays.
-        """
-        with tf.variable_scope('final_distribution'):
-            # vocab_dists = vocab_dists.read(0)
-            # attn_dists = attn_dists.read(0)
-            # p_gens = p_gens.read(0)
-            # Multiply vocab dists by p_gen and attention dists by (1-p_gen)
-            # vocab_dists = vocab_dists.stack()
-            vocab_dists = tf.reshape(vocab_dists, [self._batch_size, self._decoder_vocab_size])
-            # attn_dists = attn_dists.stack()
-            attn_dists = tf.reshape(attn_dists, [self._batch_size, -1])
-            # p_gens = p_gens.stack()
-            p_gens = tf.reshape(p_gens, [self._batch_size, 1])
-
-            vocab_dists = tf.multiply(vocab_dists, p_gens)
-            one_minus_fn = lambda x: 1 - x
-            p_gens = tf.map_fn(one_minus_fn, p_gens)
-            attn_dists = tf.multiply(p_gens, attn_dists)
-
-            max_oov_len = tf.reduce_max(self._oov_sizes, reduction_indices=[0])
-
-            # Concatenate some zeros to each vocabulary dist, to hold the probabilities for in-article OOV words
-            extended_vsize =  self._decoder_vocab_size + max_oov_len # the maximum (over the batch) size of the extended vocabulary
-            extra_zeros = tf.zeros((self._batch_size, max_oov_len))
-            # vocab_dists_extended = [tf.concat(axis=1, values=[dist, extra_zeros]) for dist in vocab_dists] # list length max_dec_steps of shape (batch_size, extended_vsize)
-            vocab_dists_extended = array_ops.concat([vocab_dists, extra_zeros], axis=1)
-            # Project the values in the attention distributions onto the appropriate entries in the final distributions
-            # This means that if a_i = 0.1 and the ith encoder word is w, and w has index 500 in the vocabulary, then we add 0.1 onto the 500th entry of the final distribution
-            # This is done for each decoder timestep.
-            # This is fiddly; we use tf.scatter_nd to do the projection
-            batch_nums = tf.range(0, limit=self._batch_size) # shape (batch_size)
-            batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
-            attention_ids = tf.reshape(self._oov_ids, [self._batch_size, -1])
-            attn_len = tf.shape(attention_ids)[1] # number of states we attend over
-            batch_nums = tf.tile(batch_nums, [1, attn_len]) # shape (batch_size, attn_len)
-            indices = tf.stack( (batch_nums, attention_ids), axis=2) # shape (batch_size, enc_t, 2)
-            shape = [self._batch_size, extended_vsize]
-            # attn_dists_projected = [tf.scatter_nd(indices, copy_dist, shape) for copy_dist in attn_dists] # list length max_dec_steps (batch_size, extended_vsize)
-            test = tf.multiply(indices, indices)
-            attn_dists_projected = array_ops.scatter_nd(indices, attn_dists, shape)
-
-            # Add the vocab distributions and the copy distributions together to get the final distributions
-            # final_dists is a list length max_dec_steps; each entry is a tensor shape (batch_size, extended_vsize) giving the final distribution for that decoder timestep
-            # Note that for decoder timesteps and examples corresponding to a [PAD] token, this is junk - ignore.
-            # final_dists = [vocab_dist + copy_dist for (vocab_dist,copy_dist) in zip(vocab_dists_extended, attn_dists_projected)]
-            final_dists = math_ops.add(vocab_dists_extended, attn_dists_projected)
-            return final_dists
-    
     def _get_decoder(self, encoder_states, line_memory, word_memory, helper, batch_size):
         with tf.variable_scope(self._name):
             with tf.variable_scope('decoder'):
@@ -447,7 +345,6 @@ class MemN2NGeneratorDialog(object):
 
                 time, outputs,_,_,attention, p_gens = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
                 final_dists = outputs.rnn_output
-                # final_dists, final_dists1 = self._calc_final_dist_loop(outputs.rnn_output, attention, p_gens, attention_size)
 
                 if self._use_beam_search:
                     predicted_ids = outputs.predicted_ids
@@ -455,8 +352,6 @@ class MemN2NGeneratorDialog(object):
                     new_translations = old_translations
                 else:
                     old_translations = outputs.sample_id
-                    # argmax_fn = lambda x: tf.cast(tf.argmax(x, axis=-1, output_type=tf.int32), tf.int32)
-                    # new_translations = tf.map_fn(argmax_fn, final_dists)
                     new_translations = tf.argmax(final_dists, axis=-1)
                 
         return old_translations, new_translations

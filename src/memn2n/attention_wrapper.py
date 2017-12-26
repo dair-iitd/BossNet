@@ -315,7 +315,7 @@ def _luong_score(query, keys, scale):
     g = variable_scope.get_variable(
         "attention_g", dtype=dtype, initializer=1.)
     score = g * score
-  return score
+  return tf.nn.l2_normalize(score, dim=1, epsilon=1e-12, name=None)
 
 def _luong_word_score(query, word_keys, scale, size):
   """Implements Luong-style (multiplicative) scoring function.
@@ -373,12 +373,12 @@ def _luong_word_score(query, word_keys, scale, size):
   scores = tf.transpose(scores, [1, 0, 2])
   if scale:
     # Scalar used in weight scaling
-    g = variable_scope.get_variable(
-        "attention_g", dtype=dtype, initializer=1.)
-    scores = g * scores
+    g_word = variable_scope.get_variable(
+        "attention_word_g", dtype=dtype, initializer=1.)
+    scores = g_word * scores
 
   # scores = tf.transpose(tf.stack(scores), [1, 0, 2, 3])
-  return scores
+  return tf.nn.l2_normalize(scores, dim=2, epsilon=1e-12, name=None)
 
 class CustomAttention(_BaseAttentionMechanism):
   """Implements Luong-style (multiplicative) attention scoring.

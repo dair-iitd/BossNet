@@ -212,7 +212,6 @@ class chatBot(object):
         for start in range(0, n, self.batch_size):
             end = start + self.batch_size
             count += 1
-            print(count)
             if count >= n / self.batch_size:
                 break
             old_pred, new_pred = self.model.predict(Batch(data, start, end))
