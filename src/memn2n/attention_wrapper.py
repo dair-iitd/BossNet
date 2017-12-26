@@ -465,7 +465,10 @@ class CustomAttention(_BaseAttentionMechanism):
       score = _luong_score(query, self._keys, self._scale)
       word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size)
     alignments = self._probability_fn(score)
-    word_alignments = math_ops.multiply(score, word_scores)
+    word_scores = tf.transpose(word_scores, [0,2,1])
+    score = tf.expand_dims(score, 1)
+    word_alignments = math_ops.multiply(word_scores, score)
+    word_alignments = tf.transpose(word_alignments, [0,2,1])
     return alignments, tf.reshape(word_alignments, [self._batch_size, -1])
 
 

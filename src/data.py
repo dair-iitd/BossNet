@@ -11,20 +11,20 @@ class Data(object):
                  data, 
                  word_idx, 
                  sentence_size, 
-                 batch_size, 
-                 candidates_size, 
+                 batch_size,
                  max_memory_size, 
                  decoder_vocab, 
                  candidate_sentence_size):
 
+        self._decode_vocab_size = len(decoder_vocab)
         self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids = \
             self._extract_data_items(data)
         self._stories, self._story_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words = \
-            self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, candidates_size, max_memory_size, decoder_vocab)
+            self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, self._decode_vocab_size, max_memory_size, decoder_vocab)
         self._queries, self._query_sizes, self._read_queries = \
             self._vectorize_queries(self._queries_ext, word_idx, sentence_size)
         self._answers, self._answer_sizes, self._read_answers = \
-            self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, candidates_size)
+            self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, self._decode_vocab_size)
 
     @property
     def stories(self):
@@ -82,7 +82,7 @@ class Data(object):
         dialog_id = [x[3] for x in data]
         return stories, queries, answers, dialog_id
 
-    def _vectorize_stories(self, stories, word_idx, sentence_size, batch_size, candidates_size, max_memory_size, decoder_vocab):
+    def _vectorize_stories(self, stories, word_idx, sentence_size, batch_size, decode_vocab_size, max_memory_size, decoder_vocab):
         S = []
         SZ = []
         S_in_readable_form = []
@@ -111,10 +111,10 @@ class Data(object):
                 for w in sentence:
                     if w not in decoder_vocab:
                         if w not in oov_words:
-                            oov_sentence_ids.append(candidates_size + len(oov_words))
+                            oov_sentence_ids.append(decode_vocab_size + len(oov_words))
                             oov_words.append(w)
                         else:
-                            oov_sentence_ids.append(candidates_size + oov_words.index(w))
+                            oov_sentence_ids.append(decode_vocab_size + oov_words.index(w))
                     else:
                         oov_sentence_ids.append(decoder_vocab[w])
                 oov_sentence_ids = oov_sentence_ids + [PAD_INDEX] * ls
@@ -157,7 +157,7 @@ class Data(object):
 
         return Q, QZ, Q_in_readable_form
 
-    def _vectorize_answers(self, answers, decoder_vocab, candidate_sentence_size, OOV_words, candidates_size):
+    def _vectorize_answers(self, answers, decoder_vocab, candidate_sentence_size, OOV_words, decode_vocab_size):
         A = []
         AZ = []
         A_in_readable_form = []
@@ -169,7 +169,7 @@ class Data(object):
                 if w in decoder_vocab:
                     a.append(decoder_vocab[w])
                 elif w in OOV_words[i]:
-                    a.append(candidates_size + OOV_words[i].index(w))
+                    a.append(decode_vocab_size + OOV_words[i].index(w))
                 else:
                     a.append(UNK_INDEX)
             a = a + [EOS_INDEX] + [PAD_INDEX] * aq

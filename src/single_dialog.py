@@ -126,10 +126,10 @@ class chatBot(object):
         '''
         # Get Data in usable form
         Data_train = Data(self.trainData, self.word_idx, self.sentence_size, 
-                          self.batch_size, self.num_cand, self.memory_size, 
+                          self.batch_size, self.memory_size, 
                           self.decoder_vocab_to_index, self.candidate_sentence_size)
         Data_val = Data(self.valData, self.word_idx, self.sentence_size, 
-                        self.batch_size, self.num_cand, self.memory_size, 
+                        self.batch_size, self.memory_size, 
                         self.decoder_vocab_to_index, self.candidate_sentence_size)
         # Create Batches
         n_train = len(Data_train.stories)
@@ -148,19 +148,22 @@ class chatBot(object):
             
             # Evaluate Model
             if t % self.evaluation_interval == 0:
-                train_acc = self.batch_predict(Data_train, n_train)
-                val_acc = self.batch_predict(Data_val, n_val)
+                train_acc_old, train_acc_new = self.batch_predict(Data_train, n_train)
+                val_acc_old, val_acc_new = self.batch_predict(Data_val, n_val)
                 print('-----------------------')
                 print('Epoch', t)
                 print('Total Cost:', total_cost)
-                print('Training Accuracy Score:', train_acc)
-                print('Validation Accuracy Score:', val_acc)
+                print('Training Accuracy Score:', train_acc_old, train_acc_new)
+                print('Validation Accuracy Score:', val_acc_old, val_acc_new)
                 print('-----------------------')
                 sys.stdout.flush()
                 
                 # Save best model
-                if val_acc >= best_validation_accuracy:
-                    best_validation_accuracy = val_acc
+                if val_acc_old >= best_validation_accuracy:
+                    best_validation_accuracy = val_acc_old
+                    self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
+                if val_acc_new >= best_validation_accuracy:
+                    best_validation_accuracy = val_acc_new
                     self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
 
     def test(self):
@@ -178,13 +181,13 @@ class chatBot(object):
             self.interactive()
         else:
             Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
-                             self.batch_size, self.num_cand, self.memory_size, 
+                             self.batch_size, self.memory_size, 
                              self.decoder_vocab_to_index, self.candidate_sentence_size)
             n_test = len(Data_test.stories)
-            test_acc = self.batch_predict(Data_test, n_test)
+            test_acc_new, test_acc_new = self.batch_predict(Data_test, n_test)
 
             print("Test Size      : ", n_test)
-            print("Test Accuracy  : ", test_acc)      
+            print("Test Accuracy  : ", test_acc_old, test_acc_new)      
             print("------------------------")
 
     def batch_train(self, data, batches):
@@ -202,12 +205,14 @@ class chatBot(object):
         '''
             Get Predictions for Input Data batchwise
         '''
-        preds = []
+        old_preds = []
+        new_preds = []
         for start in range(0, n, self.batch_size):
             end = start + self.batch_size
-            pred = self.model.predict(Batch(data, start, end))
-            preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
-        return substring_accuracy_score(preds, data.answers)
+            old_pred, new_pred = self.model.predict(Batch(data, start, end))
+            old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
+            new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
+        return substring_accuracy_score(old_preds, data.answers), substring_accuracy_score(new_preds, data.answers)
 
     def close_session(self):
         self.sess.close()

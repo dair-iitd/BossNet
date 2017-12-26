@@ -106,7 +106,7 @@ class BasicDecoder(Decoder):
   def output_size(self):
     # Return the cell output and the id
     return BasicDecoderOutput(
-        rnn_output=self._rnn_output_size(),
+        rnn_output=nest.map_structure(lambda s: s[0], self._rnn_output_size()),
         sample_id=tensor_shape.TensorShape([]))
 
   @property
@@ -171,7 +171,10 @@ def _create_zero_outputs(size, dtype, batch_size):
 
 
 def dynamic_decode(decoder,
-                   attention_size,
+                   batch_size,
+                   decoder_vocab_size,
+                   oov_sizes,
+                   oov_ids,
                    output_time_major=False,
                    impute_finished=False,
                    maximum_iterations=None,
@@ -233,6 +236,7 @@ def dynamic_decode(decoder,
 
     def _shape(batch_size, from_shape):
       if not isinstance(from_shape, tensor_shape.TensorShape):
+        print("No Shape")
         return tensor_shape.TensorShape(None)
       else:
         batch_size = tensor_util.constant_value(
@@ -245,14 +249,62 @@ def dynamic_decode(decoder,
           dtype=d,
           size=0,
           dynamic_size=True,
+          clear_after_read=False,
           element_shape=_shape(decoder.batch_size, s))
 
     initial_outputs_ta = nest.map_structure(_create_ta, decoder.output_size,
                                             decoder.output_dtype)
-    initial_attention = nest.map_structure(_create_ta, attention_size,
+    initial_attention = nest.map_structure(_create_ta, tensor_shape.TensorShape(None),
                                             dtypes.float32)
-    initial_p_gens = nest.map_structure(_create_ta, 1,
+    initial_p_gens = nest.map_structure(_create_ta, tensor_shape.TensorShape(1),
                                             dtypes.float32)
+
+    def _calc_final_dist(next_outputs, attn_dists, p_gens):
+      """Calculate the final distribution, for the pointer-generator model
+
+      Args:
+        vocab_dists: The vocabulary distributions. List length max_dec_steps of (batch_size, vsize) arrays. The words are in the order they appear in the vocabulary file.
+        attn_dists: The attention distributions. List length max_dec_steps of (batch_size, attn_len) arrays
+
+      Returns:
+        final_dists: The final distributions. List length max_dec_steps of (batch_size, extended_vsize) arrays.
+      """
+      with tf.variable_scope('final_distribution'):
+        vocab_dists = next_outputs.rnn_output
+        vocab_dists = tf.multiply(vocab_dists, p_gens)
+        one_minus_fn = lambda x: 1 - x
+        p_gens = tf.map_fn(one_minus_fn, p_gens)
+        attn_dists = tf.multiply(p_gens, attn_dists)
+
+        max_oov_len = tf.reduce_max(oov_sizes, reduction_indices=[0])
+
+        # Concatenate some zeros to each vocabulary dist, to hold the probabilities for in-article OOV words
+        extended_vsize =  decoder_vocab_size + max_oov_len # the maximum (over the batch) size of the extended vocabulary
+        extra_zeros = tf.zeros((batch_size, max_oov_len))
+        # vocab_dists_extended = [tf.concat(axis=1, values=[dist, extra_zeros]) for dist in vocab_dists] # list length max_dec_steps of shape (batch_size, extended_vsize)
+        vocab_dists_extended = array_ops.concat([vocab_dists, extra_zeros], axis=1)
+        # Project the values in the attention distributions onto the appropriate entries in the final distributions
+        # This means that if a_i = 0.1 and the ith encoder word is w, and w has index 500 in the vocabulary, then we add 0.1 onto the 500th entry of the final distribution
+        # This is done for each decoder timestep.
+        # This is fiddly; we use tf.scatter_nd to do the projection
+        batch_nums = tf.range(0, limit=batch_size) # shape (batch_size)
+        batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
+        attention_ids = tf.reshape(oov_ids, [batch_size, -1])
+        attn_len = tf.shape(attention_ids)[1] # number of states we attend over
+
+        batch_nums = tf.tile(batch_nums, [1, attn_len]) # shape (batch_size, attn_len)
+        indices = tf.stack( (batch_nums, attention_ids), axis=2) # shape (batch_size, enc_t, 2)
+        
+        shape = [batch_size, extended_vsize]
+        # attn_dists_projected = [tf.scatter_nd(indices, copy_dist, shape) for copy_dist in attn_dists] # list length max_dec_steps (batch_size, extended_vsize)
+        # attn_dists_projected = array_ops.scatter_nd(indices, attn_dists, shape)
+        attn_dists_projected = tf.scatter_nd(indices, attn_dists, shape)
+        # Add the vocab distributions and the copy distributions together to get the final distributions
+        # final_dists is a list length max_dec_steps; each entry is a tensor shape (batch_size, extended_vsize) giving the final distribution for that decoder timestep
+        # Note that for decoder timesteps and examples corresponding to a [PAD] token, this is junk - ignore.
+        # final_dists = [vocab_dist + copy_dist for (vocab_dist,copy_dist) in zip(vocab_dists_extended, attn_dists_projected)]
+        final_dists = math_ops.add(vocab_dists_extended, attn_dists_projected)
+        return BasicDecoderOutput(final_dists, next_outputs.sample_id)
 
     def condition(unused_time, unused_outputs_ta, unused_state, unused_inputs,
                   finished, unused_sequence_lengths, attention, p_gens):
@@ -288,6 +340,8 @@ def dynamic_decode(decoder,
       nest.assert_same_structure(inputs, next_inputs)
       nest.assert_same_structure(attention, next_attention)
       nest.assert_same_structure(p_gens, next_p_gens)
+
+      next_outputs = _calc_final_dist(next_outputs, next_attention, next_p_gens)
 
       # Zero out output values past finish
       if impute_finished:
@@ -333,6 +387,7 @@ def dynamic_decode(decoder,
         parallel_iterations=parallel_iterations,
         swap_memory=swap_memory)
 
+    final_time = res[0]
     final_outputs_ta = res[1]
     final_state = res[2]
     final_sequence_lengths = res[5]
@@ -340,14 +395,16 @@ def dynamic_decode(decoder,
     final_p_gens = res[7]
 
     final_outputs = nest.map_structure(lambda ta: ta.stack(), final_outputs_ta)
+    # final_attention = nest.map_structure(lambda ta: ta.stack(), final_attention)
+    # final_p_gens = nest.map_structure(lambda ta: ta.stack(), final_p_gens)
 
-    try:
-      final_outputs, final_state = decoder.finalize(
-          final_outputs, final_state, final_sequence_lengths)
-    except NotImplementedError:
-      pass
+    # try:
+    #   final_outputs, final_state = decoder.finalize(
+    #       final_outputs, final_state, final_sequence_lengths)
+    # except NotImplementedError:
+    #   pass
 
     if not output_time_major:
       final_outputs = nest.map_structure(_transpose_batch_time, final_outputs)
 
-  return final_outputs, final_state, final_sequence_lengths, final_attention, final_p_gens
+  return final_time, final_outputs, final_state, final_sequence_lengths, final_attention, final_p_gens
