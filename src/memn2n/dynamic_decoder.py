@@ -254,10 +254,6 @@ def dynamic_decode(decoder,
 
     initial_outputs_ta = nest.map_structure(_create_ta, decoder.output_size,
                                             decoder.output_dtype)
-    initial_attention = nest.map_structure(_create_ta, tensor_shape.TensorShape(None),
-                                            dtypes.float32)
-    initial_p_gens = nest.map_structure(_create_ta, tensor_shape.TensorShape(1),
-                                            dtypes.float32)
 
     def _calc_final_dist(next_outputs, attn_dists, p_gens):
       """Calculate the final distribution, for the pointer-generator model
@@ -271,8 +267,8 @@ def dynamic_decode(decoder,
       """
       with tf.variable_scope('final_distribution'):
         vocab_dists = next_outputs.rnn_output
-        vocab_dists = tf.multiply(vocab_dists, p_gens)
-        one_minus_fn = lambda x: 1 - x
+        # vocab_dists = tf.multiply(vocab_dists, p_gens)
+        one_minus_fn = lambda x: 0*x
         p_gens = tf.map_fn(one_minus_fn, p_gens)
         attn_dists = tf.multiply(p_gens, attn_dists)
 
@@ -307,10 +303,10 @@ def dynamic_decode(decoder,
         return BasicDecoderOutput(final_dists, next_outputs.sample_id)
 
     def condition(unused_time, unused_outputs_ta, unused_state, unused_inputs,
-                  finished, unused_sequence_lengths, attention, p_gens):
+                  finished, unused_sequence_lengths):
       return math_ops.logical_not(math_ops.reduce_all(finished))
 
-    def body(time, outputs_ta, state, inputs, finished, sequence_lengths, attention, p_gens):
+    def body(time, outputs_ta, state, inputs, finished, sequence_lengths):
       """Internal while_loop body.
       Args:
         time: scalar int32 tensor.
@@ -338,8 +334,6 @@ def dynamic_decode(decoder,
       nest.assert_same_structure(state, decoder_state)
       nest.assert_same_structure(outputs_ta, next_outputs)
       nest.assert_same_structure(inputs, next_inputs)
-      nest.assert_same_structure(attention, next_attention)
-      nest.assert_same_structure(p_gens, next_p_gens)
 
       next_outputs = _calc_final_dist(next_outputs, next_attention, next_p_gens)
 
@@ -370,29 +364,22 @@ def dynamic_decode(decoder,
 
       outputs_ta = nest.map_structure(lambda ta, out: ta.write(time, out),
                                       outputs_ta, emit)
-      attention = nest.map_structure(lambda ta, out: ta.write(time, out),
-                                      attention, next_attention)
-      p_gens = nest.map_structure(lambda ta, out: ta.write(time, out),
-                                      p_gens, next_p_gens)
       return (time + 1, outputs_ta, next_state, next_inputs, next_finished,
-              next_sequence_lengths, attention, p_gens)
+              next_sequence_lengths)
 
     res = control_flow_ops.while_loop(
         condition,
         body,
         loop_vars=[
             initial_time, initial_outputs_ta, initial_state, initial_inputs,
-            initial_finished, initial_sequence_lengths, initial_attention, initial_p_gens,
+            initial_finished, initial_sequence_lengths,
         ],
         parallel_iterations=parallel_iterations,
         swap_memory=swap_memory)
 
-    final_time = res[0]
     final_outputs_ta = res[1]
     final_state = res[2]
     final_sequence_lengths = res[5]
-    final_attention = res[6]
-    final_p_gens = res[7]
 
     final_outputs = nest.map_structure(lambda ta: ta.stack(), final_outputs_ta)
     # final_attention = nest.map_structure(lambda ta: ta.stack(), final_attention)
@@ -407,4 +394,4 @@ def dynamic_decode(decoder,
     if not output_time_major:
       final_outputs = nest.map_structure(_transpose_batch_time, final_outputs)
 
-  return final_time, final_outputs, final_state, final_sequence_lengths, final_attention, final_p_gens
+  return final_outputs, final_state, final_sequence_lengths

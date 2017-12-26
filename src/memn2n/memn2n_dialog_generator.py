@@ -310,13 +310,11 @@ class MemN2NGeneratorDialog(object):
                 
                 answer_sizes = tf.reshape(self._answer_sizes,[-1])
                 helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
-                time, outputs,_,_,attention, p_gens = dynamic_decode(self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size), self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
+                outputs,_,_ = dynamic_decode(self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size), self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
                 final_dists = outputs.rnn_output
                 max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
                 ans = self._answers[:, :max_length]
                 
-                # final_dists, final_dists1 = self._calc_final_dist_loop(logits, attention, p_gens, attention_size)
-
                 target_weights = tf.reshape(self._answer_sizes,[-1])
                 target_weights = tf.sequence_mask(target_weights, self._candidate_sentence_size, dtype=tf.float32)
                 target_weights = target_weights[:, :max_length] 
@@ -343,7 +341,7 @@ class MemN2NGeneratorDialog(object):
                     helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
                     decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
 
-                time, outputs,_,_,attention, p_gens = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
+                outputs,_,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
                 final_dists = outputs.rnn_output
 
                 if self._use_beam_search:

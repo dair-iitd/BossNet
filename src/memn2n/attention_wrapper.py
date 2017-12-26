@@ -145,7 +145,8 @@ class _BaseAttentionMechanism(AttentionMechanism):
                probability_fn,
                line_memory_sequence_length=None,
                word_memory_sequence_length=None,
-               memory_layer=None,
+               line_memory_layer=None,
+               word_memory_layer=None,
                check_inner_dims_defined=True,
                score_mask_value=float("-inf"),
                name=None):
@@ -179,12 +180,12 @@ class _BaseAttentionMechanism(AttentionMechanism):
         and not isinstance(query_layer, layers_base.Layer)):
       raise TypeError(
           "query_layer is not a Layer: %s" % type(query_layer).__name__)
-    if (memory_layer is not None
-        and not isinstance(memory_layer, layers_base.Layer)):
-      raise TypeError(
-          "memory_layer is not a Layer: %s" % type(memory_layer).__name__)
+    # if (memory_layer is not None
+    #     and not isinstance(memory_layer, layers_base.Layer)):
+    #   raise TypeError(
+    #       "memory_layer is not a Layer: %s" % type(memory_layer).__name__)
     self._query_layer = query_layer
-    self._memory_layer = memory_layer
+    self._memory_layer = line_memory_layer
     if not callable(probability_fn):
       raise TypeError("probability_fn must be callable, saw type: %s" %
                       type(probability_fn).__name__)
@@ -200,7 +201,10 @@ class _BaseAttentionMechanism(AttentionMechanism):
           word_memory, word_memory_sequence_length,
           check_inner_dims_defined=check_inner_dims_defined)
       self._keys = (
-          self.memory_layer(self._values) if self.memory_layer  # pylint: disable=not-callable
+          line_memory_layer(self._values) if self.memory_layer  # pylint: disable=not-callable
+          else self._values)
+      self._word_keys = (
+          word_memory_layer(self._word_values) if self.memory_layer  # pylint: disable=not-callable
           else self._values)
       self._batch_size = (self._keys.shape[0].value or array_ops.shape(self._keys)[0])
       self._alignments_size = (self._keys.shape[1].value or array_ops.shape(self._keys)[1])
@@ -225,6 +229,10 @@ class _BaseAttentionMechanism(AttentionMechanism):
   @property
   def keys(self):
     return self._keys
+
+  @property
+  def word_keys(self):
+    return self._word_keys
 
   @property
   def batch_size(self):
@@ -310,11 +318,6 @@ def _luong_score(query, keys, scale):
   score = math_ops.matmul(query, keys, transpose_b=True)
   score = array_ops.squeeze(score, [1])
 
-  if scale:
-    # Scalar used in weight scaling
-    g = variable_scope.get_variable(
-        "attention_g", dtype=dtype, initializer=1.)
-    score = g * score
   return tf.nn.l2_normalize(score, dim=1, epsilon=1e-12, name=None)
 
 def _luong_word_score(query, word_keys, scale, size):
@@ -371,11 +374,6 @@ def _luong_word_score(query, word_keys, scale, size):
   context_fn = lambda key: array_ops.squeeze(math_ops.matmul(query, key, transpose_b=True), [1])
   scores = tf.map_fn(context_fn, word_keys)
   scores = tf.transpose(scores, [1, 0, 2])
-  if scale:
-    # Scalar used in weight scaling
-    g_word = variable_scope.get_variable(
-        "attention_word_g", dtype=dtype, initializer=1.)
-    scores = g_word * scores
 
   # scores = tf.transpose(tf.stack(scores), [1, 0, 2, 3])
   return tf.nn.l2_normalize(scores, dim=2, epsilon=1e-12, name=None)
@@ -433,8 +431,10 @@ class CustomAttention(_BaseAttentionMechanism):
     wrapped_probability_fn = lambda score: probability_fn(score)
     super(CustomAttention, self).__init__(
         query_layer=None,
-        memory_layer=layers_core.Dense(
-            num_units, name="memory_layer", use_bias=False),
+        line_memory_layer=layers_core.Dense(
+            num_units, name="line_memory_layer", use_bias=False),
+        word_memory_layer=layers_core.Dense(
+            num_units, name="word_emory_layer", use_bias=False),
         line_memory=line_memory,
         word_memory=word_memory,
         probability_fn=wrapped_probability_fn,
@@ -463,7 +463,7 @@ class CustomAttention(_BaseAttentionMechanism):
     """
     with variable_scope.variable_scope(None, "custom_attention", [query]):
       score = _luong_score(query, self._keys, self._scale)
-      word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size)
+      word_scores = _luong_word_score(query, self._word_keys, self._scale, self._alignments_size)
     alignments = self._probability_fn(score)
     word_scores = tf.transpose(word_scores, [0,2,1])
     score = tf.expand_dims(score, 1)
