@@ -145,6 +145,7 @@ class chatBot(object):
         # Train Model in Batch Mode
         for t in range(1, self.epochs + 1):
             total_cost = self.batch_train(Data_train, batches)
+            print(total_cost)
             
             # Evaluate Model
             if t % self.evaluation_interval == 0:
@@ -207,8 +208,13 @@ class chatBot(object):
         '''
         old_preds = []
         new_preds = []
+        count = 0
         for start in range(0, n, self.batch_size):
             end = start + self.batch_size
+            count += 1
+            print(count)
+            if count >= n / self.batch_size:
+                break
             old_pred, new_pred = self.model.predict(Batch(data, start, end))
             old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
             new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
