@@ -1,4 +1,5 @@
 import numpy as np
+import random
 
 PAD_INDEX = 0
 UNK_INDEX = 1
@@ -73,6 +74,10 @@ class Data(object):
     @property
     def dialog_ids(self):
         return self._dialog_ids
+
+    @property
+    def decode_vocab_size(self):
+        return self._decode_vocab_size
 
     def _extract_data_items(self, data):
         data.sort(key=lambda x:len(x[0]),reverse=True)
@@ -182,13 +187,18 @@ class Data(object):
 
 class Batch(Data):
 
-    def __init__(self, data, start, end):
+    def __init__(self, data, start, end, unk_size=0, word_drop=False):
+
+        self._unk_size = unk_size
 
         self._stories = data.stories[start:end]
 
         self._queries = data.queries[start:end]
 
         self._answers = data.answers[start:end]
+
+        if word_drop:
+            self._stories, self._queries, self._answers = self._random_unk(self._stories, self._queries, self._answers, data.decode_vocab_size)
 
         self._story_sizes = data.story_sizes[start:end]
 
@@ -207,3 +217,21 @@ class Batch(Data):
         self._oov_sizes = data.oov_sizes[start:end]
 
         self._dialog_ids = data.dialog_ids[start:end]
+
+    def _random_unk(self, stories, queries, answers, vocab_size):
+        unk_index = random.sample(range(1, vocab_size), self._unk_size)
+        print(len(unk_index))
+        new_stories = []
+        new_queries = []
+        new_answers = []
+        for story, query, answer in zip(stories, queries, answers):
+            for element in unk_index:
+                story[story == element] = 0
+                query[query == element] = 0
+                answer[answer == element] = 0
+            new_stories.append(story)
+            new_queries.append(query)
+            new_answers.append(answer)
+
+        return new_stories, new_queries, new_answers
+

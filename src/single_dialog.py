@@ -28,6 +28,8 @@ tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
 tf.flags.DEFINE_boolean('use_beam_search', False, 'if True, uses beam search for dcoding, else uses greedy decoding')
 tf.flags.DEFINE_boolean('use_attention', False, 'if True, uses attention')
+tf.flags.DEFINE_boolean('word_drop', False, 'if True, uses random word dropout')
+tf.flags.DEFINE_integer("unk_size", 500, "Number of random unk words per batch")
 
 # Output Specifications
 tf.flags.DEFINE_boolean('game', False, 'if True, show infinite game results')
@@ -67,6 +69,8 @@ class chatBot(object):
         self.embedding_size = FLAGS.embedding_size
         self.use_beam_search= FLAGS.use_beam_search
         self.use_attention = FLAGS.use_attention
+        self.word_drop = FLAGS.word_drop
+        self.unk_size = FLAGS.unk_size
 
         # Create Model Store Directory
         if not os.path.exists(self.model_dir):
@@ -198,7 +202,7 @@ class chatBot(object):
         np.random.shuffle(batches)
         total_cost = 0.0
         for start, end in batches:
-            cost_t, logits = self.model.batch_fit(Batch(data, start, end))
+            cost_t, logits = self.model.batch_fit(Batch(data, start, end, self.unk_size, self.word_drop))
             total_cost += cost_t
         return total_cost
 
