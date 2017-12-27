@@ -65,7 +65,8 @@ class MemN2NGeneratorDialog(object):
                  name='MemN2N',
                  task_id=1,
                  use_beam_search=False,
-                 use_attention=False):
+                 use_attention=False,
+                 dropout=False):
         """Creates an End-To-End Memory Network
 
         Args:
@@ -120,6 +121,7 @@ class MemN2NGeneratorDialog(object):
         self._beam_width = 10
         self._use_beam_search = use_beam_search
         self._use_attention = use_attention
+        self._dropout = dropout
         
         # add unk and eos
         self.UNK = decoder_vocab_to_index["UNK"]
@@ -285,7 +287,7 @@ class MemN2NGeneratorDialog(object):
                     reshaped_line_memory = tf.reshape(line_memory,[batch_size, -1, self._embedding_size])
                     reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
                     self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory)
-                    decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False)
+                    decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False, dropout=self._dropout)
                 
                     # added wrapped_encoder_states to overcome https://github.com/tensorflow/tensorflow/issues/11540
                     wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)

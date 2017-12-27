@@ -28,8 +28,9 @@ tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
 tf.flags.DEFINE_boolean('use_beam_search', False, 'if True, uses beam search for dcoding, else uses greedy decoding')
 tf.flags.DEFINE_boolean('use_attention', False, 'if True, uses attention')
+tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
 tf.flags.DEFINE_boolean('word_drop', False, 'if True, uses random word dropout')
-tf.flags.DEFINE_integer("unk_size", 500, "Number of random unk words per batch")
+tf.flags.DEFINE_integer("unk_size", 100, "Number of random unk words per batch")
 
 # Output Specifications
 tf.flags.DEFINE_boolean('game', False, 'if True, show infinite game results')
@@ -69,6 +70,7 @@ class chatBot(object):
         self.embedding_size = FLAGS.embedding_size
         self.use_beam_search= FLAGS.use_beam_search
         self.use_attention = FLAGS.use_attention
+        self.dropout = FLAGS.dropout
         self.word_drop = FLAGS.word_drop
         self.unk_size = FLAGS.unk_size
 
@@ -106,7 +108,7 @@ class chatBot(object):
                                            self.embedding_size, self.decoder_vocab_to_index, self.candidate_sentence_size, 
                                            session=self.sess, hops=self.hops, max_grad_norm=self.max_grad_norm, 
                                            optimizer=self.optimizer, task_id=self.task_id, use_beam_search=self.use_beam_search,
-                                           use_attention=self.use_attention)
+                                           use_attention=self.use_attention, dropout=self.dropout)
         self.saver = tf.train.Saver(max_to_keep=50)
 
     def build_vocab(self, data):

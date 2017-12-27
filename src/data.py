@@ -106,7 +106,7 @@ class Data(object):
 
             for i, sentence in enumerate(story, 1):
                 ls = max(0, sentence_size - len(sentence))
-                ss.append([word_idx[w] if w in word_idx else UNK_INDEX for w in sentence] + [0] * ls)
+                ss.append([word_idx[w] if w in word_idx else 0 for w in sentence] + [0] * ls)
                 sizes.append(len(sentence))
 
                 story_element = ' '.join([str(x) for x in sentence[:-2]])
@@ -198,7 +198,9 @@ class Batch(Data):
         self._answers = data.answers[start:end]
 
         if word_drop:
-            self._stories, self._queries, self._answers = self._random_unk(self._stories, self._queries, self._answers, data.decode_vocab_size)
+            coin = random.randint(0, 1)
+            if coin == 1:
+                self._stories, self._queries = self._random_unk(self._stories, self._queries, data.decode_vocab_size)
 
         self._story_sizes = data.story_sizes[start:end]
 
@@ -218,20 +220,16 @@ class Batch(Data):
 
         self._dialog_ids = data.dialog_ids[start:end]
 
-    def _random_unk(self, stories, queries, answers, vocab_size):
+    def _random_unk(self, stories, queries, vocab_size):
         unk_index = random.sample(range(1, vocab_size), self._unk_size)
-        print(len(unk_index))
         new_stories = []
         new_queries = []
-        new_answers = []
-        for story, query, answer in zip(stories, queries, answers):
+        for story, query in zip(stories, queries):
             for element in unk_index:
                 story[story == element] = 0
                 query[query == element] = 0
-                answer[answer == element] = 0
             new_stories.append(story)
             new_queries.append(query)
-            new_answers.append(answer)
 
-        return new_stories, new_queries, new_answers
+        return new_stories, new_queries
 

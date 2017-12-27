@@ -619,6 +619,7 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
                cell_input_fn=None,
                output_attention=True,
                initial_cell_state=None,
+               dropout=False,
                name=None):
     """Construct the `AttentionWrapper`.
 
@@ -747,6 +748,7 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
     self._output_attention = output_attention
     self._alignment_history = alignment_history
     self._keep_prob = keep_prob
+    self._dropout = dropout
     with ops.name_scope(name, "AttentionWrapperInit"):
       if initial_cell_state is None:
         self._initial_cell_state = None
@@ -951,8 +953,11 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
         alignments=self._item_or_tuple(all_alignments),
         alignment_history=self._item_or_tuple(all_histories))
 
-    p_gens = tf.nn.dropout(tf.sigmoid(linear([attention, cell_state, cell_inputs], 1, True)), self._keep_prob)
-
+    if self._dropout:
+      p_gens = tf.nn.dropout(tf.sigmoid(linear([attention, cell_state, cell_inputs], 1, True)), self._keep_prob)
+    else:
+      p_gens = tf.sigmoid(linear([attention, cell_state, cell_inputs], 1, True))
+    
     if self._output_attention:
       return attention, next_state
     else:
