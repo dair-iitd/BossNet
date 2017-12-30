@@ -30,7 +30,7 @@ tf.flags.DEFINE_boolean('use_beam_search', False, 'if True, uses beam search for
 tf.flags.DEFINE_boolean('use_attention', False, 'if True, uses attention')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
 tf.flags.DEFINE_boolean('word_drop', False, 'if True, uses random word dropout')
-tf.flags.DEFINE_integer("unk_size", 100, "Number of random unk words per batch")
+tf.flags.DEFINE_integer("unk_size", 10, "Number of random unk words per batch")
 
 # Output Specifications
 tf.flags.DEFINE_boolean('game', False, 'if True, show infinite game results')

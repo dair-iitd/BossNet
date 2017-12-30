@@ -463,7 +463,7 @@ class CustomAttention(_BaseAttentionMechanism):
     """
     with variable_scope.variable_scope(None, "custom_attention", [query]):
       score = _luong_score(query, self._keys, self._scale)
-      word_scores = _luong_word_score(query, self._word_keys, self._scale, self._alignments_size)
+      word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size)
     alignments = self._probability_fn(score)
     word_scores = tf.transpose(word_scores, [0,2,1])
     score = tf.expand_dims(score, 1)
