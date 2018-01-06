@@ -177,6 +177,7 @@ class MemN2NGeneratorDialog(object):
         self._stories = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="stories")
         self._queries = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries")
         self._answers = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers")
+        self._answers_emb_lookup = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers_emb")
         self._sentence_sizes = tf.placeholder(tf.int32, [None, None], name="sentence_sizes")
         self._query_sizes = tf.placeholder(tf.int32, [None, 1], name="query_sizes")
         self._answer_sizes = tf.placeholder(tf.int32, [None, 1], name="answer_sizes")
@@ -324,7 +325,7 @@ class MemN2NGeneratorDialog(object):
             
             batch_size = tf.shape(self._stories)[0]
             # decoder_input = batch_size x candidate_sentence_size
-            decoder_input = tf.concat([tf.fill([batch_size, 1], self.GO_SYMBOL), self._answers[:, :]],axis=1)
+            decoder_input = tf.concat([tf.fill([batch_size, 1], self.GO_SYMBOL), self._answers_emb_lookup[:, :]],axis=1)
             # decoder_emb_inp = batch_size x candidate_sentence_size x embedding_size
             decoder_emb_inp = tf.nn.embedding_lookup(self.C, decoder_input)
 
@@ -392,6 +393,7 @@ class MemN2NGeneratorDialog(object):
         feed_dict[self._oov_sizes] = batch.oov_sizes
         if train:
             feed_dict[self._answers] = batch.answers
+            feed_dict[self._answers_emb_lookup] = batch.answers_emb_lookup
             feed_dict[self._answer_sizes] = batch.answer_sizes
             feed_dict[self._keep_prob] = 0.5 
         else:

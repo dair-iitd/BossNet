@@ -24,7 +24,8 @@ class Data(object):
             self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, self._decode_vocab_size, max_memory_size, decoder_vocab)
         self._queries, self._query_sizes, self._read_queries = \
             self._vectorize_queries(self._queries_ext, word_idx, sentence_size)
-        self._answers, self._answer_sizes, self._read_answers = \
+        # Jan 6 : added answers with UNKs
+        self._answers, self._answer_sizes, self._read_answers, self._answers_emb_lookup = \
             self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, self._decode_vocab_size)
 
     @property
@@ -46,6 +47,10 @@ class Data(object):
     @property
     def query_sizes(self):
         return self._query_sizes
+
+    @property
+    def answers_emb_lookup(self):
+        return self._answers_emb_lookup
 
     @property
     def answer_sizes(self):
@@ -104,9 +109,11 @@ class Data(object):
             oov_ids = []
             oov_words = []
 
-            for i, sentence in enumerate(story, 1):
+            # Jan 6 : changed index to k
+            for k, sentence in enumerate(story, 1):
                 ls = max(0, sentence_size - len(sentence))
-                ss.append([word_idx[w] if w in word_idx else 0 for w in sentence] + [0] * ls)
+                # Jan 6 : words not in vocab are changed from NIL to UNK
+                ss.append([word_idx[w] if w in word_idx else UNK_INDEX for w in sentence] + [0] * ls)
                 sizes.append(len(sentence))
 
                 story_element = ' '.join([str(x) for x in sentence[:-2]])
@@ -154,7 +161,8 @@ class Data(object):
 
         for i, query in enumerate(queries):
             lq = max(0, sentence_size - len(query))
-            q = [word_idx[w] if w in word_idx else 0 for w in query] + [0] * lq
+            # Jan 6 : words not in vocab are changed from NIL to UNK
+            q = [word_idx[w] if w in word_idx else UNK_INDEX for w in query] + [0] * lq
 
             Q.append(np.array(q))
             QZ.append(np.array([len(query)]))
@@ -165,25 +173,33 @@ class Data(object):
     def _vectorize_answers(self, answers, decoder_vocab, candidate_sentence_size, OOV_words, decode_vocab_size):
         A = []
         AZ = []
+        # Jan 6 : added answers with UNKs
+        A_for_embeddding_lookup = []
         A_in_readable_form = []
 
         for i, answer in enumerate(answers):
             aq = max(0, candidate_sentence_size - len(answer) - 1)
             a = []
+            a_emb_lookup = []
             for w in answer:
                 if w in decoder_vocab:
                     a.append(decoder_vocab[w])
+                    a_emb_lookup.append(decoder_vocab[w])
                 elif w in OOV_words[i]:
-                    a.append(decode_vocab_size + OOV_words[i].index(w))
+                    a.append(decode_vocab_size + OOV_words[i].tolist().index(w))
+                    a_emb_lookup.append(UNK_INDEX)
                 else:
                     a.append(UNK_INDEX)
+                    a_emb_lookup.append(UNK_INDEX)
             a = a + [EOS_INDEX] + [PAD_INDEX] * aq
+            a_emb_lookup = a_emb_lookup + [EOS_INDEX] + [PAD_INDEX] * aq
 
             A.append(np.array(a))
+            A_for_embeddding_lookup.append(np.array(a_emb_lookup))
             AZ.append(np.array([len(answer)+1]))
             A_in_readable_form.append(' '.join([str(x) for x in answer]))
 
-        return A, AZ, A_in_readable_form 
+        return A, AZ, A_in_readable_form, A_for_embeddding_lookup
 
 class Batch(Data):
 
@@ -196,6 +212,9 @@ class Batch(Data):
         self._queries = data.queries[start:end]
 
         self._answers = data.answers[start:end]
+
+        # Jan 6 : added answers with UNKs
+        self._answers_emb_lookup = data.answers_emb_lookup[start:end]
 
         if word_drop:
             coin = random.randint(0, 1)

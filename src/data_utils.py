@@ -77,7 +77,8 @@ def get_decoder_vocab(data_dir, task_id):
         for i,line in enumerate(f):
             line=tokenize(line.strip())[1:]
             for word in line:
-                if word not in decoder_vocab_to_index:
+                # Jan 6 : REMOVE (added for DEBUGGING) - ignoring restaurant words in decode vocab
+                if word not in decoder_vocab_to_index and not word.startswith("resto_") :
                     index = len(decoder_vocab_to_index)
                     decoder_vocab_to_index[word]=index
                     decoder_index_to_vocab[index]=word
@@ -193,13 +194,27 @@ def is_Sublist(l, s):
 
     return sub_set
 
-def substring_accuracy_score(preds, vals):
+def get_surface_form(index_list, word_map):
+    surface_form = ""
+    for i in index_list:
+        if i in word_map:
+            surface_form = surface_form + " " + word_map[i]
+        else:
+            surface_form = surface_form + " " + str(i)
+    return surface_form
+
+def substring_accuracy_score(preds, vals, word_map=None, isTrain=True):
     total_score = 0.0
     for pred, val in zip(preds, vals):
         reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
         hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
         if is_Sublist(reference, hypothesis) == True:
             total_score += 1.0
-
+        else:
+            # Jan 6 : print incorrect results while testing
+            if word_map is not None and isTrain==False:
+                ref_surface = get_surface_form(reference, word_map)
+                hyp_surface = get_surface_form(hypothesis, word_map)
+                print("ground truth   : ", hyp_surface)
+                print("predictions  : ", ref_surface)
     return (float(total_score) / len(preds))*100
-

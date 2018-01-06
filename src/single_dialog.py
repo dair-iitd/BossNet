@@ -73,6 +73,7 @@ class chatBot(object):
         self.dropout = FLAGS.dropout
         self.word_drop = FLAGS.word_drop
         self.unk_size = FLAGS.unk_size
+        self.is_train = FLAGS.train
 
         # Create Model Store Directory
         if not os.path.exists(self.model_dir):
@@ -98,8 +99,9 @@ class chatBot(object):
         # Retreive Task Data
         self.trainData, self.testData, self.valData = load_dialog_task(self.data_dir, self.task_id, self.OOV)
         self.trainDataVocab, self.testDataVocab, self.valDataVocab = load_dialog_task(self.data_dir, self.task_id, False)
-        self.dataVocab = self.trainDataVocab + self.testDataVocab + self.valDataVocab
-        self.build_vocab(self.dataVocab)
+        # self.dataVocab = self.trainDataVocab + self.testDataVocab + self.valDataVocab
+        # Jan 6 : REMOVE (added for DEBUGGING) - making test vocab as vocab, replace with train vocab later
+        self.build_vocab(self.testDataVocab)
 
         # Define MemN2N + Generator Model
         self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=self.epsilon)
@@ -117,7 +119,9 @@ class chatBot(object):
         '''
         vocab = reduce(lambda x, y: x | y, (set(list(chain.from_iterable(s)) + q) for s, q, a, start in data))
         vocab = sorted(vocab)
-        self.word_idx = dict((c, i + 1) for i, c in enumerate(vocab))
+        # Jan 6 : UNK was missing in train
+        self.word_idx = dict((c, i + 2) for i, c in enumerate(vocab))
+        self.word_idx['UNK']=1
         max_story_size = max(map(len, (s for s, _, _, _ in data)))
         self.sentence_size = max(map(len, chain.from_iterable(s for s, _, _, _ in data)))
         query_size = max(map(len, (q for _, q, _, _ in data)))
@@ -191,7 +195,7 @@ class chatBot(object):
                              self.batch_size, self.memory_size, 
                              self.decoder_vocab_to_index, self.candidate_sentence_size)
             n_test = len(Data_test.stories)
-            test_acc_new, test_acc_new = self.batch_predict(Data_test, n_test)
+            test_acc_old, test_acc_new = self.batch_predict(Data_test, n_test)
 
             print("Test Size      : ", n_test)
             print("Test Accuracy  : ", test_acc_old, test_acc_new)      
@@ -223,7 +227,7 @@ class chatBot(object):
             old_pred, new_pred = self.model.predict(Batch(data, start, end))
             old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
             new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
-        return substring_accuracy_score(old_preds, data.answers), substring_accuracy_score(new_preds, data.answers)
+        return substring_accuracy_score(old_preds, data.answers), substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)
 
     def close_session(self):
         self.sess.close()
