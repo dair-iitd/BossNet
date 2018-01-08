@@ -54,7 +54,7 @@ def add_gradient_noise(t, stddev=1e-3, name=None):
 class MemN2NGeneratorDialog(object):
     """End-To-End Memory Network with a generative decoder."""
 
-    def __init__(self, batch_size, vocab_size, candidates_size, sentence_size, embedding_size,
+    def __init__(self, batch_size, vocab_size, sentence_size, embedding_size,
                  decoder_vocab_to_index,candidate_sentence_size, 
                  hops=3,
                  max_grad_norm=40.0,
@@ -77,8 +77,6 @@ class MemN2NGeneratorDialog(object):
 
             sentence_size: The max size of a sentence in the data. All sentences should be padded
             to this length. If padding is required it should be done with nil one-hot encoding (0).
-
-            candidates_size: The size of candidates
 
             memory_size: The max size of the memory. Since Tensorflow currently does not support jagged arrays
             all memories must be padded to this length. If padding is required, the extra memories should be
@@ -108,7 +106,6 @@ class MemN2NGeneratorDialog(object):
 
         self._batch_size = batch_size
         self._vocab_size = vocab_size
-        self._candidates_size = candidates_size
         self._sentence_size = sentence_size
         self._embedding_size = embedding_size
         self._hops = hops

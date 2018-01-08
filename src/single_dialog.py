@@ -88,14 +88,8 @@ class chatBot(object):
         else:
             print("Task ", self.task_id, " learning rate : ", self.learning_rate)
         
-        # Load Candidate Responses
-        self.candidates, self.candid2indx = load_candidates(self.data_dir, self.task_id)
-        self.indx2candid = dict((self.candid2indx[key], key) for key in self.candid2indx)
-        self.num_cand = len(self.candidates)
-        self.candidate_sentence_size = max(map(len, self.candidates))+1
-        
         # Load Decoder Vocabulary
-        self.decoder_vocab_to_index, self.decoder_index_to_vocab = get_decoder_vocab(self.data_dir, self.task_id)
+        self.decoder_vocab_to_index, self.decoder_index_to_vocab, self.candidate_sentence_size = get_decoder_vocab(self.data_dir, self.task_id)
         print("Decoder Vocab Size : ", len(self.decoder_vocab_to_index))
 
         # Retreive Task Data
@@ -108,7 +102,7 @@ class chatBot(object):
         # Define MemN2N + Generator Model
         self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=self.epsilon)
         self.sess = tf.Session()
-        self.model = MemN2NGeneratorDialog(self.batch_size, self.vocab_size, self.num_cand, self.sentence_size, 
+        self.model = MemN2NGeneratorDialog(self.batch_size, self.vocab_size, self.sentence_size, 
                                            self.embedding_size, self.decoder_vocab_to_index, self.candidate_sentence_size, 
                                            session=self.sess, hops=self.hops, max_grad_norm=self.max_grad_norm, 
                                            optimizer=self.optimizer, task_id=self.task_id, use_beam_search=self.use_beam_search,

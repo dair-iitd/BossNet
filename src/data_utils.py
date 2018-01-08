@@ -67,22 +67,24 @@ def get_decoder_vocab(data_dir, task_id):
     decoder_vocab_to_index['EOS']=EOS_INDEX
     decoder_index_to_vocab[EOS_INDEX]='EOS'
 
-    # Get Candidate File
-    if task_id==6:
-        candidates_f='dialog-babi-task6-dstc2-candidates.txt'
-    else:
-        candidates_f='dialog-babi-candidates.txt'
-
-    with open(os.path.join(data_dir,candidates_f)) as f:
-        for i,line in enumerate(f):
-            line=tokenize(line.strip())[1:]
-            for word in line:
-                # Jan 6 : REMOVE (added for DEBUGGING) - ignoring restaurant words in decode vocab
-                if word not in decoder_vocab_to_index and not word.startswith("resto_") :
-                    index = len(decoder_vocab_to_index)
-                    decoder_vocab_to_index[word]=index
-                    decoder_index_to_vocab[index]=word
-    return decoder_vocab_to_index,decoder_index_to_vocab
+    # Jan 9: decode vocab is now generated from train responses and not from candidate file
+    files = os.listdir(data_dir)
+    files = [os.path.join(data_dir, f) for f in files]
+    s = 'dialog-babi-task{}-'.format(task_id)
+    train_file = [f for f in files if s in f and 'trn' in f][0]
+    
+    candidate_sentence_size = 0
+    responses = get_responses(train_file)
+    for response in responses:
+        line=tokenize(response.strip())
+        if len(line) > candidate_sentence_size:
+            candidate_sentence_size = len(line)
+        for word in line:
+            if word not in decoder_vocab_to_index:
+                index = len(decoder_vocab_to_index)
+                decoder_vocab_to_index[word]=index
+                decoder_index_to_vocab[index]=word
+    return decoder_vocab_to_index,decoder_index_to_vocab,candidate_sentence_size+1
 
 def load_dialog_task(data_dir, task_id, isOOV):
     ''' 
@@ -118,6 +120,23 @@ def tokenize(sent):
     if result[-1]=='.' or result[-1]=='?' or result[-1]=='!':
         result=result[:-1]
     return result
+
+def get_responses(f):
+    '''
+        Parse dialogs provided in the babi tasks format
+    '''
+    responses=[]
+    with open(f) as f:
+        lines=f.readlines()
+        for line in lines:
+            line=line.strip()
+            if line:
+                nid, line = line.split(' ', 1)
+                nid = int(nid)
+                if '\t' in line:
+                    u, r = line.split('\t')
+                    responses.append(r)
+    return responses
 
 def parse_dialogs_per_response(lines):
     '''
@@ -215,6 +234,7 @@ def substring_accuracy_score(preds, vals, word_map=None, isTrain=True):
             if word_map is not None and isTrain==False:
                 ref_surface = get_surface_form(reference, word_map)
                 hyp_surface = get_surface_form(hypothesis, word_map)
-                print("ground truth   : ", hyp_surface)
-                print("predictions  : ", ref_surface)
+                print('ground truth   : ' + hyp_surface)
+                print('predictions    : ' + ref_surface)
+                print('-----')
     return (float(total_score) / len(preds))*100
