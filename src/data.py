@@ -1,5 +1,6 @@
 import numpy as np
 import random
+from itertools import chain
 
 PAD_INDEX = 0
 UNK_INDEX = 1
@@ -217,9 +218,7 @@ class Batch(Data):
         self._answers_emb_lookup = data.answers_emb_lookup[start:end]
 
         if word_drop:
-            coin = random.randint(0, 1)
-            if coin == 1:
-                self._stories, self._queries = self._random_unk(self._stories, self._queries, data.decode_vocab_size)
+            self._stories, self._queries = self._random_unk(self._stories, self._queries)
 
         self._story_sizes = data.story_sizes[start:end]
 
@@ -239,16 +238,26 @@ class Batch(Data):
 
         self._dialog_ids = data.dialog_ids[start:end]
 
-    def _random_unk(self, stories, queries, vocab_size):
-        unk_index = random.sample(range(1, vocab_size), self._unk_size)
+    # Jan 8 : randomly make a few words in the input as UNK
+    def _random_unk(self, stories, queries):
+
         new_stories = []
         new_queries = []
         for story, query in zip(stories, queries):
-            for element in unk_index:
-                story[story == element] = 0
-                query[query == element] = 0
+            vocab = self._get_vocab_as_list(story, query)
+            sampled_words = list(map(lambda _: random.choice(vocab), range(self._unk_size)))
+            for element in sampled_words:
+                story[story == element] = UNK_INDEX
+                query[query == element] = UNK_INDEX
             new_stories.append(story)
             new_queries.append(query)
 
         return new_stories, new_queries
+
+    def _get_vocab_as_list(self, story, query):
+        
+        vocab = set(list(chain.from_iterable(story.tolist())) + query.tolist())
+        if 0 in vocab: vocab.remove(0)
+        return list(vocab)
+
 

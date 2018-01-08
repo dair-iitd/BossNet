@@ -30,7 +30,7 @@ tf.flags.DEFINE_boolean('use_beam_search', False, 'if True, uses beam search for
 tf.flags.DEFINE_boolean('use_attention', False, 'if True, uses attention')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
 tf.flags.DEFINE_boolean('word_drop', False, 'if True, uses random word dropout')
-tf.flags.DEFINE_integer("unk_size", 10, "Number of random unk words per batch")
+tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 
 # Output Specifications
 tf.flags.DEFINE_boolean('game', False, 'if True, show infinite game results')
@@ -54,7 +54,10 @@ class chatBot(object):
         # Define Parameters of ChatBot
         self.data_dir = FLAGS.data_dir
         self.task_id = FLAGS.task_id
-        self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + "_model/"
+        word_drop_str = ""
+        if FLAGS.word_drop:
+            word_drop_str="_words_dropped_" + str(FLAGS.unk_size)
+        self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + word_drop_str + "_model/"
         self.logs_dir = FLAGS.logs_dir
         self.isInteractive = FLAGS.interactive
         self.OOV = FLAGS.OOV
@@ -90,7 +93,6 @@ class chatBot(object):
         self.indx2candid = dict((self.candid2indx[key], key) for key in self.candid2indx)
         self.num_cand = len(self.candidates)
         self.candidate_sentence_size = max(map(len, self.candidates))+1
-        print("Candidate Size : ", self.num_cand)
         
         # Load Decoder Vocabulary
         self.decoder_vocab_to_index, self.decoder_index_to_vocab = get_decoder_vocab(self.data_dir, self.task_id)
@@ -100,8 +102,8 @@ class chatBot(object):
         self.trainData, self.testData, self.valData = load_dialog_task(self.data_dir, self.task_id, self.OOV)
         self.trainDataVocab, self.testDataVocab, self.valDataVocab = load_dialog_task(self.data_dir, self.task_id, False)
         # self.dataVocab = self.trainDataVocab + self.testDataVocab + self.valDataVocab
-        # Jan 6 : REMOVE (added for DEBUGGING) - making test vocab as vocab, replace with train vocab later
-        self.build_vocab(self.testDataVocab)
+        # Jan 8 : Build vocab only with training data
+        self.build_vocab(self.trainDataVocab)
 
         # Define MemN2N + Generator Model
         self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=self.epsilon)
@@ -128,7 +130,7 @@ class chatBot(object):
         self.memory_size = min(self.memory_size, max_story_size)
         self.vocab_size = len(self.word_idx) + 1  # +1 for nil word
         self.sentence_size = max(query_size, self.sentence_size)
-        print("Vocab Size     : ", self.vocab_size)
+        print("Input Vocab Size   : ", self.vocab_size)
 
     def train(self):
         '''
@@ -153,9 +155,10 @@ class chatBot(object):
         best_validation_accuracy = 0
 
         # Train Model in Batch Mode
+        print('-----------------------')
         for t in range(1, self.epochs + 1):
             total_cost = self.batch_train(Data_train, batches)
-            print(total_cost)
+            print('Epoch', t, ' Total Cost:', total_cost)
             
             # Evaluate Model
             if t % self.evaluation_interval == 0:
@@ -200,6 +203,9 @@ class chatBot(object):
             print("Test Size      : ", n_test)
             print("Test Accuracy  : ", test_acc_old, test_acc_new)      
             print("------------------------")
+
+    def interactive(self):
+        print("To Be Implemented")
 
     def batch_train(self, data, batches):
         '''
