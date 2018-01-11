@@ -21,6 +21,7 @@ class Data(object):
         self._decode_vocab_size = len(decoder_vocab)
         self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids = \
             self._extract_data_items(data)
+        self._db_values_set = self._get_db_values_set(self._stories_ext, word_idx)
         self._stories, self._story_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words = \
             self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, self._decode_vocab_size, max_memory_size, decoder_vocab)
         self._queries, self._query_sizes, self._read_queries = \
@@ -84,6 +85,20 @@ class Data(object):
     @property
     def decode_vocab_size(self):
         return self._decode_vocab_size
+
+    @property
+    def db_values_set(self):
+        return self._db_values_set
+    
+    def _get_db_values_set(self, stories, word_idx):
+        inv_db_values_idx = set()
+        for i, story in enumerate(stories):
+            for k, sentence in enumerate(story, 1):
+                if '$db' in sentence:
+                    for w in sentence[:-2]:
+                        if not w.startswith('r_'):
+                            inv_db_values_idx.add(word_idx[w])
+        return inv_db_values_idx
 
     def _extract_data_items(self, data):
         data.sort(key=lambda x:len(x[0]),reverse=True)
@@ -218,7 +233,7 @@ class Batch(Data):
         self._answers_emb_lookup = data.answers_emb_lookup[start:end]
 
         if word_drop:
-            self._stories, self._queries = self._random_unk(self._stories, self._queries)
+            self._stories, self._queries = self._random_unk(self._stories, self._queries, self._answers, data.db_values_set)
 
         self._story_sizes = data.story_sizes[start:end]
 
@@ -239,13 +254,18 @@ class Batch(Data):
         self._dialog_ids = data.dialog_ids[start:end]
 
     # Jan 8 : randomly make a few words in the input as UNK
-    def _random_unk(self, stories, queries):
+    def _random_unk(self, stories, queries, answers, db_values_set):
 
         new_stories = []
         new_queries = []
-        for story, query in zip(stories, queries):
-            vocab = self._get_vocab_as_list(story, query)
-            sampled_words = list(map(lambda _: random.choice(vocab), range(self._unk_size)))
+        
+        for story, query, answer in zip(stories, queries, answers):
+            vocab = self._get_input_output_intersection_vocab(story, query, answer)
+            coin_toss = random.randint(0,1)
+            if coin_toss == 0 or len(vocab) == 0:
+                sampled_words = []
+            else:
+                sampled_words = list(map(lambda _: random.choice(list(vocab)), range(min(self._unk_size,len(vocab)))))
             for element in sampled_words:
                 story[story == element] = UNK_INDEX
                 query[query == element] = UNK_INDEX
@@ -254,10 +274,10 @@ class Batch(Data):
 
         return new_stories, new_queries
 
-    def _get_vocab_as_list(self, story, query):
+    def _get_input_output_intersection_vocab(self, story, query, answer):
         
-        vocab = set(list(chain.from_iterable(story.tolist())) + query.tolist())
+        input_vocab = set(list(chain.from_iterable(story.tolist())) + query.tolist())
+        output_vocab = set(answer.tolist())
+        vocab = input_vocab.intersection(output_vocab)
         if 0 in vocab: vocab.remove(0)
-        return list(vocab)
-
-
+        return vocab
