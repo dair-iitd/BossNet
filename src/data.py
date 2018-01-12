@@ -92,12 +92,12 @@ class Data(object):
     
     def _get_db_values_set(self, stories, word_idx):
         inv_db_values_idx = set()
-        for i, story in enumerate(stories):
-            for k, sentence in enumerate(story, 1):
-                if '$db' in sentence:
-                    for w in sentence[:-2]:
-                        if not w.startswith('r_'):
-                            inv_db_values_idx.add(word_idx[w])
+        # for i, story in enumerate(stories):
+        #     for k, sentence in enumerate(story, 1):
+        #         if '$db' in sentence:
+        #             for w in sentence[:-2]:
+        #                 if not w.startswith('r_'):
+        #                     inv_db_values_idx.add(word_idx[w])
         return inv_db_values_idx
 
     def _extract_data_items(self, data):

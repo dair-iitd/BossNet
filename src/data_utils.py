@@ -4,6 +4,7 @@ import os
 import re
 import numpy as np
 import tensorflow as tf
+from nltk.translate.bleu_score import corpus_bleu
 from string import punctuation
 
 __all__ =  ["load_candidates", 
@@ -11,7 +12,8 @@ __all__ =  ["load_candidates",
             "load_dialog_task", 
             "tokenize", 
             "pad_to_answer_size", 
-            "substring_accuracy_score"]
+            "substring_accuracy_score",
+            "bleu_accuracy_score"]
 
 ###################################################################################################
 #########                                  Global Variables                              ##########
@@ -237,4 +239,13 @@ def substring_accuracy_score(preds, vals, word_map=None, isTrain=True):
                 print('ground truth   : ' + hyp_surface)
                 print('predictions    : ' + ref_surface)
                 print('-----')
+    return (float(total_score) / len(preds))*100
+
+def bleu_accuracy_score(preds, vals, word_map=None, isTrain=True):
+    total_score = 0.0
+    for pred, val in zip(preds, vals):
+        reference = [word_map[x] if x in word_map else 'UNK' for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
+        hypothesis = [word_map[x] if x in word_map else 'UNK' for x in val if x != EOS_INDEX and x != PAD_INDEX]
+        total_score += corpus_bleu([[reference]], [hypothesis])
+
     return (float(total_score) / len(preds))*100

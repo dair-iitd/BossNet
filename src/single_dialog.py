@@ -30,6 +30,7 @@ tf.flags.DEFINE_boolean('use_beam_search', False, 'if True, uses beam search for
 tf.flags.DEFINE_boolean('use_attention', False, 'if True, uses attention')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
 tf.flags.DEFINE_boolean('word_drop', False, 'if True, uses random word dropout')
+tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score')
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 
 # Output Specifications
@@ -76,6 +77,7 @@ class chatBot(object):
         self.dropout = FLAGS.dropout
         self.word_drop = FLAGS.word_drop
         self.unk_size = FLAGS.unk_size
+        self.bleu_score = FLAGS.bleu_score
         self.is_train = FLAGS.train
 
         # Create Model Store Directory
@@ -156,13 +158,16 @@ class chatBot(object):
             
             # Evaluate Model
             if t % self.evaluation_interval == 0:
-                train_acc_old, train_acc_new = self.batch_predict(Data_train, n_train)
-                val_acc_old, val_acc_new = self.batch_predict(Data_val, n_val)
+                train_accuracies = self.batch_predict(Data_train, n_train)
+                val_accuracies = self.batch_predict(Data_val, n_val)
                 print('-----------------------')
                 print('Epoch', t)
                 print('Total Cost:', total_cost)
-                print('Training Accuracy Score:', train_acc_old, train_acc_new)
-                print('Validation Accuracy Score:', val_acc_old, val_acc_new)
+                print('Training Accuracy Score:', train_accuracies[0], train_accuracies[1])
+                print('Validation Accuracy Score:', val_accuracies[0], val_accuracies[1])
+                if self.bleu_score:
+                    print('Training Bleu Score:', train_accuracies[2], train_accuracies[3])
+                    print('Validation Bleu Score:', val_accuracies[2], val_accuracies[3])
                 print('-----------------------')
                 sys.stdout.flush()
                 
@@ -227,7 +232,10 @@ class chatBot(object):
             old_pred, new_pred = self.model.predict(Batch(data, start, end))
             old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
             new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
-        return substring_accuracy_score(old_preds, data.answers), substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)
+        output = [substring_accuracy_score(old_preds, data.answers), substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+        if self.bleu_score:
+            output += [bleu_accuracy_score(old_preds, data.answers, word_map=self.decoder_index_to_vocab), bleu_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+        return output
 
     def close_session(self):
         self.sess.close()
