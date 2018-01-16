@@ -66,7 +66,10 @@ class MemN2NGeneratorDialog(object):
                  task_id=1,
                  use_beam_search=False,
                  use_attention=False,
-                 dropout=False):
+                 dropout=False,
+                 char_emb=False,
+                 reduce_states=False):
+
         """Creates an End-To-End Memory Network
 
         Args:
@@ -119,6 +122,8 @@ class MemN2NGeneratorDialog(object):
         self._use_beam_search = use_beam_search
         self._use_attention = use_attention
         self._dropout = dropout
+        self._char_emb = char_emb
+        self._reduce_states = reduce_states
         
         # add unk and eos
         self.UNK = decoder_vocab_to_index["UNK"]
@@ -176,7 +181,11 @@ class MemN2NGeneratorDialog(object):
         self._answers = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers")
         self._answers_emb_lookup = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers_emb")
         self._sentence_sizes = tf.placeholder(tf.int32, [None, None], name="sentence_sizes")
+        self._sentence_tokens = tf.placeholder(tf.int32, [None, None, self._sentence_size, None], name="story_tokens")
+        self._sentence_word_sizes = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="sentence_word_sizes")
         self._query_sizes = tf.placeholder(tf.int32, [None, 1], name="query_sizes")
+        self._query_tokens = tf.placeholder(tf.int32, [None, self._sentence_size, None], name="query_tokens")
+        self._queries_word_sizes = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries_word_sizes")
         self._answer_sizes = tf.placeholder(tf.int32, [None, 1], name="answer_sizes")
         self._oov_ids = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="oov_ids")
         self._oov_sizes = tf.placeholder(tf.int32, [None], name="oov_sizes")
@@ -195,28 +204,49 @@ class MemN2NGeneratorDialog(object):
             self.C = tf.Variable(C, name="C")
 
             self.H = tf.Variable(self._init([self._embedding_size, self._embedding_size]), name="H")
-            
-            with tf.variable_scope("encoder"):
-                self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size)
-                self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size)
 
             with tf.variable_scope('decoder'):
                 self.decoder_cell = tf.contrib.rnn.GRUCell(self._embedding_size)
                 self.projection_layer = layers_core.Dense(self._decoder_vocab_size, use_bias=False)
 
-            with tf.variable_scope('reduce_final_st'):
-                # Define weights and biases to reduce the cell and reduce the state
-                self.w_reduce = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce")
-                self.bias_reduce = tf.Variable(self._init([self._embedding_size]), name="bias_reduce")
+            if self._reduce_states:
+                with tf.variable_scope("encoder"):
+                    self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size)
+                    self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size)
 
-            with tf.variable_scope('reduce_word_st'):
-                # Define weights and biases to reduce the cell and reduce the state
-                self.w_reduce_word = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce_word")
-                self.bias_reduce_word = tf.Variable(self._init([self._embedding_size]), name="bias_reduce_word")
+                with tf.variable_scope('reduce_final_st'):
+                    # Define weights and biases to reduce the cell and reduce the state
+                    self.w_reduce = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce")
+                    self.bias_reduce = tf.Variable(self._init([self._embedding_size]), name="bias_reduce")
+
+                with tf.variable_scope('reduce_word_st'):
+                    # Define weights and biases to reduce the cell and reduce the state
+                    self.w_reduce_word = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce_word")
+                    self.bias_reduce_word = tf.Variable(self._init([self._embedding_size]), name="bias_reduce_word")
+
+                if self._char_emb:
+                    with tf.variable_scope("char_emb"):
+                        self.char_fwd = tf.contrib.rnn.GRUCell(self._embedding_size)
+                        self.char_bwd = tf.contrib.rnn.GRUCell(self._embedding_size)
+
+                    with tf.variable_scope('reduce_char_st'):
+                        # Define weights and biases to reduce the cell and reduce the state
+                        self.w_reduce_char = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce_char")
+                        self.bias_reduce_char = tf.Variable(self._init([self._embedding_size]), name="bias_reduce_char")
                 
+            else:
+                with tf.variable_scope("encoder"):
+                    self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
+                    self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
+
+                if self._char_emb:
+                    with tf.variable_scope("char_emb"):
+                        self.char_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
+                        self.char_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
+
         self._nil_vars = set([self.A.name])
 
-    def _reduce_states(self, fw_st, bw_st):
+    def _reduce_states_fn(self, fw_st, bw_st):
         with tf.variable_scope('reduce_final_st'):
 
             # Apply linear layer
@@ -233,6 +263,14 @@ class MemN2NGeneratorDialog(object):
             new_c = tf.nn.relu(tf.matmul(old_c, self.w_reduce_word) + self.bias_reduce_word) # Get new cell from old cell
             return new_c # Return new cell state
 
+    def _reduce_char_states(self, fw_st, bw_st):
+        with tf.variable_scope('reduce_char_st'):
+
+            # Apply linear layer
+            old_c = tf.concat(axis=1, values=[fw_st, bw_st]) # Concatenation of fw and bw cell
+            new_c = tf.nn.relu(tf.matmul(old_c, self.w_reduce_char) + self.bias_reduce_char) # Get new cell from old cell
+            return new_c # Return new cell state
+
     def _encoder(self, stories, queries):
         with tf.variable_scope(self._name):
             attn_arr = []
@@ -244,7 +282,10 @@ class MemN2NGeneratorDialog(object):
             with tf.variable_scope("encoder"):
                 (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, q_emb, sequence_length=q_sizes, dtype=tf.float32)
             (f_state, b_state) = output_states
-            u_0 = self._reduce_states(f_state, b_state)
+            if self._reduce_states:
+                u_0 = self._reduce_states_fn(f_state, b_state)
+            else:
+                u_0 = tf.concat(axis=1, values=[f_state, b_state])
             # u_0 : batch_size x embedding_size
             # u_0 = tf.concat([f_state, b_state], 1)
 
@@ -264,15 +305,39 @@ class MemN2NGeneratorDialog(object):
                 (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, sentences, sequence_length=sizes, dtype=tf.float32)
             (f_state, b_state) = output_states
             (f_states, b_states) = outputs
-            new_state = self._reduce_states(f_state, b_state)
-            m_word = self._reduce_word_states(f_states, b_states)
             
+            if self._reduce_states:
+                new_state = self._reduce_states_fn(f_state, b_state)
+                m_word = self._reduce_states_fn(f_states, b_states)
+            else:
+                new_state = tf.concat(axis=1, values=[f_state, b_state])
+                old_c = tf.concat(axis=2, values=[f_states, b_states]) # Concatenation of fw and bw cell
+                m_word = tf.reshape(old_c, [-1, self._embedding_size])
+
             # m : batch_size x memory_size x embedding_size
             # m = tf.reshape(tf.concat([f_state, b_state], 1), [batch_size, memory_size, -1])
             m = tf.reshape(new_state, [batch_size, memory_size, self._embedding_size])
             max_length = self._sentence_size - tf.reduce_max(sizes)
             m_padding = tf.zeros([batch_size, memory_size, max_length, self._embedding_size])
             m_word = tf.reshape(m_word, [batch_size, memory_size, -1, self._embedding_size])
+            
+            if self._char_emb:
+                s_sizes = tf.reshape(self._sentence_word_sizes, [-1])
+                max_token_length = tf.reduce_max(s_sizes, reduction_indices=[0])
+                s_tokens =  tf.reshape(self._sentence_tokens, [-1, max_token_length, 1])
+                with tf.variable_scope("char_emb"):
+                    (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.char_fwd, self.char_bwd, s_tokens, sequence_length=s_sizes, dtype=tf.float32)
+                (f_state, b_state) = output_states
+                if self._reduce_states:
+                    char_query = self._reduce_char_states(f_state, b_state)
+                else:
+                    char_query = tf.concat(axis=1, values=[f_state, b_state])
+                char_query = tf.reshape(char_query, [batch_size, memory_size, -1, self._embedding_size])
+
+                word_level_emb = tf.concat(axis=3, values=[char_query, m_word])
+            else:
+                word_level_emb = m_word
+
             for hop_index in range(self._hops):
                 
                 # hack to get around no reduce_dot
@@ -294,7 +359,7 @@ class MemN2NGeneratorDialog(object):
 
                 u.append(u_k)
             
-            return u_k, m, m_word, attn_arr
+            return u_k, m, word_level_emb, attn_arr
 
     def _get_decoder(self, encoder_states, line_memory, word_memory, helper, batch_size):
         with tf.variable_scope(self._name):
@@ -302,7 +367,10 @@ class MemN2NGeneratorDialog(object):
                 if self._use_attention:
                     # make the shape concrete to prevent ValueError caused by (?, ?, ?)
                     reshaped_line_memory = tf.reshape(line_memory,[batch_size, -1, self._embedding_size])
-                    reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
+                    if self._char_emb:
+                        reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
+                    else:
+                        reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size * 2])
                     self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory)
                     decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False, dropout=self._dropout)
                 
@@ -388,6 +456,11 @@ class MemN2NGeneratorDialog(object):
         feed_dict[self._query_sizes] = batch.query_sizes
         feed_dict[self._oov_ids] = batch.oov_ids
         feed_dict[self._oov_sizes] = batch.oov_sizes
+        if self._char_emb:
+            feed_dict[self._sentence_tokens] = batch.story_tokens
+            feed_dict[self._query_tokens] = batch.query_tokens
+            feed_dict[self._sentence_word_sizes] = batch.story_word_sizes
+            feed_dict[self._query_word_sizes] = batch.query_word_sizes
         if train:
             feed_dict[self._answers] = batch.answers
             feed_dict[self._answers_emb_lookup] = batch.answers_emb_lookup
