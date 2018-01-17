@@ -321,7 +321,7 @@ def _luong_score(query, keys, scale):
 
   return tf.nn.l2_normalize(score, dim=1, epsilon=1e-12, name=None)
 
-def _luong_word_score(query, word_keys, scale, size):
+def _luong_word_score(query, word_keys, scale, size, char_emb):
   """Implements Luong-style (multiplicative) scoring function.
 
   This attention has two forms.  The first is standard Luong attention,
@@ -359,7 +359,9 @@ def _luong_word_score(query, word_keys, scale, size):
 
   # Reshape from [batch_size, depth] to [batch_size, 1, depth]
   # for matmul.
-  query = array_ops.concat([query, query], 1)
+  if char_emb:
+    query = array_ops.concat([query, query], 1)
+
   query = array_ops.expand_dims(query, 1)
 
   # Inner product along the query units dimension.
@@ -401,6 +403,7 @@ class CustomAttention(_BaseAttentionMechanism):
                num_units,
                line_memory,
                word_memory,
+               char_emb=False,
                line_memory_sequence_length=None,
                word_memory_sequence_length=None,
                scale=False,
@@ -447,6 +450,7 @@ class CustomAttention(_BaseAttentionMechanism):
     self._num_units = num_units
     self._scale = scale
     self._name = name
+    self._char_emb = char_emb
 
   def __call__(self, query, previous_alignments):
     """Score the query based on the keys and values.
@@ -465,7 +469,7 @@ class CustomAttention(_BaseAttentionMechanism):
     """
     with variable_scope.variable_scope(None, "custom_attention", [query]):
       score = _luong_score(query, self._keys, self._scale)
-      word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size)
+      word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size, self._char_emb)
     alignments = self._probability_fn(score)
     word_scores = tf.transpose(word_scores, [0,2,1])
     score = tf.expand_dims(score, 1)

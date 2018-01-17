@@ -182,11 +182,11 @@ class chatBot(object):
                 sys.stdout.flush()
                 
                 # Save best model
-                if val_acc_old >= best_validation_accuracy:
-                    best_validation_accuracy = val_acc_old
+                if train_accuracies[0] >= best_validation_accuracy:
+                    best_validation_accuracy = train_accuracies[0]
                     self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
-                if val_acc_new >= best_validation_accuracy:
-                    best_validation_accuracy = val_acc_new
+                if val_accuracies[1] >= best_validation_accuracy:
+                    best_validation_accuracy = train_accuracies[1]
                     self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
 
     def test(self):
@@ -223,7 +223,8 @@ class chatBot(object):
         '''
         np.random.shuffle(batches)
         total_cost = 0.0
-        for start, end in batches:
+        for i, (start, end) in enumerate(batches):
+            print(i)
             cost_t, logits = self.model.batch_fit(Batch(data, start, end, self.unk_size, self.word_drop))
             total_cost += cost_t
         return total_cost

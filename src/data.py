@@ -233,7 +233,23 @@ class Data(object):
             OOV_size.append(np.array(len(oov_words)))
             OOV_words.append(np.array(oov_words))
 
-        return S, SZ, Word_tokens, SWZ, S_in_readable_form, OOV_ids, OOV_size, OOV_words
+        max_token_size = 0
+        for size in SWZ:
+            token_size = np.amax(np.amax(size))
+            if token_size > max_token_size:
+                max_token_size = token_size
+        padded_tokens = []
+        for story in Word_tokens:
+            pad_stories = []
+            for token in story:
+                pad_token = []
+                for token_list in token:
+                    token_list = token_list + [0]*(max_token_size - len(token_list))
+                    pad_token.append(token_list)
+                pad_stories.append(pad_token)
+            padded_tokens.append(np.array(pad_stories))
+
+        return S, SZ, padded_tokens, SWZ, S_in_readable_form, OOV_ids, OOV_size, OOV_words
 
     def _vectorize_queries(self, queries, word_idx, sentence_size, char_emb_length, char_overlap):
         Q = []
@@ -255,7 +271,20 @@ class Data(object):
             QWZ.append(np.array(qw))
             Q_in_readable_form.append(' '.join([str(x) for x in query]))
 
-        return Q, QZ, Word_tokens, QWZ, Q_in_readable_form
+        max_token_size = 0
+        for size in QWZ:
+            token_size = np.amax(np.amax(size))
+            if token_size > max_token_size:
+                max_token_size = token_size
+        padded_tokens = []
+        for token in Word_tokens:
+            pad_token = []
+            for token_list in token:
+                token_list = token_list + [0]*(max_token_size - len(token_list))
+                pad_token.append(token_list)
+            padded_tokens.append(pad_token)
+
+        return Q, QZ, padded_tokens, QWZ, Q_in_readable_form
 
     def _vectorize_answers(self, answers, decoder_vocab, candidate_sentence_size, OOV_words, decode_vocab_size):
         A = []
@@ -312,13 +341,17 @@ class Batch(Data):
 
         self._answer_sizes = data.answer_sizes[start:end]
 
+        self._story_tokens = data.story_tokens[start:end]
+
+        self._query_tokens = data.query_tokens[start:end]
+
         self._story_word_sizes = data.story_word_sizes[start:end]
 
         self._query_word_sizes = data.query_word_sizes[start:end]
 
-        self._story_tokens = self._pad_tokens_story(data.story_tokens[start:end], self._story_word_sizes)
+        # self._story_tokens = self._pad_tokens_story(data.story_tokens[start:end], self._story_word_sizes)
 
-        self._query_tokens = self._pad_tokens_query(data.query_tokens[start:end], self._query_word_sizes)
+        # self._query_tokens = self._pad_tokens_query(data.query_tokens[start:end], self._query_word_sizes)
 
         self._read_stories = data.readable_stories[start:end]
 

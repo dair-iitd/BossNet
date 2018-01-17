@@ -190,6 +190,7 @@ class MemN2NGeneratorDialog(object):
         self._oov_ids = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="oov_ids")
         self._oov_sizes = tf.placeholder(tf.int32, [None], name="oov_sizes")
         self._keep_prob = tf.placeholder(tf.float32)
+        self._token_size = tf.placeholder(tf.float32)
 
     def _build_vars(self):
         '''
@@ -325,9 +326,8 @@ class MemN2NGeneratorDialog(object):
             
             if self._char_emb:
                 s_sizes = tf.reshape(self._sentence_word_sizes, [-1])
-                max_token_length = tf.reduce_max(s_sizes, reduction_indices=[0])
                 token_emb = tf.nn.embedding_lookup(self.Z, self._sentence_tokens)
-                s_tokens =  tf.reshape(token_emb, [-1, max_token_length, self._embedding_size])
+                s_tokens =  tf.reshape(token_emb, [-1, 45, self._embedding_size])
                 with tf.variable_scope("char_emb"):
                     (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.char_fwd, self.char_bwd, s_tokens, sequence_length=s_sizes, dtype=tf.float32)
                 (f_state, b_state) = output_states
@@ -336,7 +336,7 @@ class MemN2NGeneratorDialog(object):
                 else:
                     char_query = tf.concat(axis=1, values=[f_state, b_state])
                 char_query = tf.reshape(char_query, [batch_size, memory_size, -1, self._embedding_size])
-
+                m_word = tf.nn.dropout(m_word, self._keep_prob)
                 word_level_emb = tf.concat(axis=3, values=[char_query, m_word])
             else:
                 word_level_emb = m_word
@@ -374,7 +374,7 @@ class MemN2NGeneratorDialog(object):
                         reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size * 2])
                     else:
                         reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
-                    self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory)
+                    self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory, char_emb=self._char_emb)
                     decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False, dropout=self._dropout)
                 
                     # added wrapped_encoder_states to overcome https://github.com/tensorflow/tensorflow/issues/11540
@@ -463,6 +463,7 @@ class MemN2NGeneratorDialog(object):
             feed_dict[self._sentence_tokens] = batch.story_tokens
         #     feed_dict[self._query_tokens] = batch.query_tokens
             feed_dict[self._sentence_word_sizes] = batch.story_word_sizes
+            feed_dict[self._token_size] = 45
         #     feed_dict[self._query_word_sizes] = batch.query_word_sizes
         if train:
             feed_dict[self._answers] = batch.answers
