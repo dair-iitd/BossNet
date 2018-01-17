@@ -185,7 +185,7 @@ class MemN2NGeneratorDialog(object):
         self._sentence_word_sizes = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="sentence_word_sizes")
         self._query_sizes = tf.placeholder(tf.int32, [None, 1], name="query_sizes")
         self._query_tokens = tf.placeholder(tf.int32, [None, self._sentence_size, None], name="query_tokens")
-        self._queries_word_sizes = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries_word_sizes")
+        self._query_word_sizes = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries_word_sizes")
         self._answer_sizes = tf.placeholder(tf.int32, [None, 1], name="answer_sizes")
         self._oov_ids = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="oov_ids")
         self._oov_sizes = tf.placeholder(tf.int32, [None], name="oov_sizes")
@@ -202,6 +202,8 @@ class MemN2NGeneratorDialog(object):
             
             C = tf.concat([nil_word_slot, self._init([self._decoder_vocab_size, self._embedding_size])], 0)
             self.C = tf.Variable(C, name="C")
+
+            self.Z = tf.Variable(self._init([256, self._embedding_size]), name="Z")
 
             self.H = tf.Variable(self._init([self._embedding_size, self._embedding_size]), name="H")
 
@@ -324,7 +326,8 @@ class MemN2NGeneratorDialog(object):
             if self._char_emb:
                 s_sizes = tf.reshape(self._sentence_word_sizes, [-1])
                 max_token_length = tf.reduce_max(s_sizes, reduction_indices=[0])
-                s_tokens =  tf.reshape(self._sentence_tokens, [-1, max_token_length, 1])
+                token_emb = tf.nn.embedding_lookup(self.Z, self._sentence_tokens)
+                s_tokens =  tf.reshape(token_emb, [-1, max_token_length, self._embedding_size])
                 with tf.variable_scope("char_emb"):
                     (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.char_fwd, self.char_bwd, s_tokens, sequence_length=s_sizes, dtype=tf.float32)
                 (f_state, b_state) = output_states
@@ -368,9 +371,9 @@ class MemN2NGeneratorDialog(object):
                     # make the shape concrete to prevent ValueError caused by (?, ?, ?)
                     reshaped_line_memory = tf.reshape(line_memory,[batch_size, -1, self._embedding_size])
                     if self._char_emb:
-                        reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
-                    else:
                         reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size * 2])
+                    else:
+                        reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
                     self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory)
                     decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False, dropout=self._dropout)
                 
@@ -458,9 +461,9 @@ class MemN2NGeneratorDialog(object):
         feed_dict[self._oov_sizes] = batch.oov_sizes
         if self._char_emb:
             feed_dict[self._sentence_tokens] = batch.story_tokens
-            feed_dict[self._query_tokens] = batch.query_tokens
+        #     feed_dict[self._query_tokens] = batch.query_tokens
             feed_dict[self._sentence_word_sizes] = batch.story_word_sizes
-            feed_dict[self._query_word_sizes] = batch.query_word_sizes
+        #     feed_dict[self._query_word_sizes] = batch.query_word_sizes
         if train:
             feed_dict[self._answers] = batch.answers
             feed_dict[self._answers_emb_lookup] = batch.answers_emb_lookup

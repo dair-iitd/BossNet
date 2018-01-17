@@ -126,26 +126,32 @@ class Data(object):
         dialog_id = [x[3] for x in data]
         return stories, queries, answers, dialog_id
 
-    def _index(token, size):
-        index_list = [ord(c) for c in s]
+    def _index(self, token, size):
+        # if token in self._token_list:
+        #     return self._token_list.index(token)
+        # else:
+        #     self._token_list += [token]
+        #     return len(self._token_list)
+
+        index_list = [ord(c) for c in token]
         index = 0
         for i in range(size):
-            index = index*(10*size) + index_list[i]
+            index = index*(10**size) + index_list[i]
         return index
 
-    def _tokenize(word, size, overlap):
+    def _tokenize(self, word, size, overlap):
         tokens = []
         start = 0
-        end = size-1
+        end = size
         if overlap:
-            while word < size:
+            while len(word) < size:
                 word += " " 
         else:
-            while (word % size) < size:
+            while (len(word) % size) > 0:
                 word += " "
             
-        while end < len(word):
-            token = self._index(word[start:end])
+        while end <= len(word):
+            token = self._index(word[start:end], size)
             tokens.append(token)
             if overlap:
                 start += 1; end += 1
@@ -182,7 +188,7 @@ class Data(object):
                 # Jan 6 : words not in vocab are changed from NIL to UNK
                 ss.append([word_idx[w] if w in word_idx else UNK_INDEX for w in sentence] + [0] * ls)
                 sizes.append(len(sentence))
-                word_tokens = [self._tokenize(w) for w in sentence] + [] * ls
+                word_tokens = [self._tokenize(w, char_emb_length, char_overlap) for w in sentence] + [[]] * ls
                 tokens.append(word_tokens)
                 word_sizes.append([len(w) for w in word_tokens])
                 story_element = ' '.join([str(x) for x in sentence[:-2]])
@@ -216,7 +222,7 @@ class Data(object):
                 oov_ids.append([0] * sentence_size)
                 sizes.append(0)
                 word_sizes.append([0] * sentence_size)
-                tokens.append([] * sentence_size)
+                tokens.append([[]] * sentence_size)
 
             S.append(np.array(ss))
             SZ.append(np.array(sizes))
@@ -240,7 +246,7 @@ class Data(object):
             lq = max(0, sentence_size - len(query))
             # Jan 6 : words not in vocab are changed from NIL to UNK
             q = [word_idx[w] if w in word_idx else UNK_INDEX for w in query] + [0] * lq
-            tokens = [self._tokenize(w) for w in query] + [] * lq
+            tokens = [self._tokenize(w, char_emb_length, char_overlap) for w in query] + [[]] * lq
             qw = [len(w) for w in tokens]
 
             Q.append(np.array(q))
@@ -348,23 +354,22 @@ class Batch(Data):
         return new_stories, new_queries
 
     def _get_input_output_intersection_vocab(self, story, query, answer):
-        
         input_vocab = set(list(chain.from_iterable(story.tolist())) + query.tolist())
         output_vocab = set(answer.tolist())
         vocab = input_vocab.intersection(output_vocab)
         if 0 in vocab: vocab.remove(0)
         return vocab
 
-    def _pad_tokens_story(tokens, token_sizes):
+    def _pad_tokens_story(self, tokens, token_sizes):
         max_token_size = 0
         for size in token_sizes:
-            token_size = np.amax(size)
+            token_size = np.amax(np.amax(size))
             if token_size > max_token_size:
                 max_token_size = token_size
         padded_tokens = []
         for story in tokens:
             pad_stories = []
-            for token in tokens:
+            for token in story:
                 pad_token = []
                 for token_list in token:
                     token_list = token_list + [0]*(max_token_size - len(token_list))
@@ -373,10 +378,10 @@ class Batch(Data):
             padded_tokens.append(np.array(pad_stories))
         return padded_tokens
 
-    def _pad_tokens_query(tokens, token_sizes):
+    def _pad_tokens_query(self, tokens, token_sizes):
         max_token_size = 0
         for size in token_sizes:
-            token_size = np.amax(size)
+            token_size = np.amax(np.amax(size))
             if token_size > max_token_size:
                 max_token_size = token_size
         padded_tokens = []
@@ -385,6 +390,6 @@ class Batch(Data):
             for token_list in token:
                 token_list = token_list + [0]*(max_token_size - len(token_list))
                 pad_token.append(token_list)
-            padded_tokens.append(np.array(pad_token))
+            padded_tokens.append(pad_token)
         return padded_tokens
 

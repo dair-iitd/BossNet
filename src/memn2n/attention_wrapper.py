@@ -186,6 +186,7 @@ class _BaseAttentionMechanism(AttentionMechanism):
     #       "memory_layer is not a Layer: %s" % type(memory_layer).__name__)
     self._query_layer = query_layer
     self._memory_layer = line_memory_layer
+    self._word_memory_layer = word_memory_layer
     if not callable(probability_fn):
       raise TypeError("probability_fn must be callable, saw type: %s" %
                       type(probability_fn).__name__)
@@ -204,7 +205,7 @@ class _BaseAttentionMechanism(AttentionMechanism):
           line_memory_layer(self._values) if self.memory_layer  # pylint: disable=not-callable
           else self._values)
       self._word_keys = (
-          word_memory_layer(self._word_values) if self.memory_layer  # pylint: disable=not-callable
+          word_memory_layer(self._word_values) if self._word_memory_layer  # pylint: disable=not-callable
           else self._values)
       self._batch_size = (self._keys.shape[0].value or array_ops.shape(self._keys)[0])
       self._alignments_size = (self._keys.shape[1].value or array_ops.shape(self._keys)[1])
@@ -348,16 +349,17 @@ def _luong_word_score(query, word_keys, scale, size):
   """
   depth = query.get_shape()[-1]
   key_units = word_keys.get_shape()[-1]
-  if depth != key_units:
-    raise ValueError(
-        "Incompatible or unknown inner dimensions between query and keys.  "
-        "Query (%s) has units: %s.  Keys (%s) have units: %s.  "
-        "Perhaps you need to set num_units to the keys' dimension (%s)?"
-        % (query, depth, word_keys, key_units, key_units))
+  # if 2*depth != key_units:
+  #   raise ValueError(
+  #       "Incompatible or unknown inner dimensions between query and keys.  "
+  #       "Query (%s) has units: %s.  Keys (%s) have units: %s.  "
+  #       "Perhaps you need to set num_units to the keys' dimension (%s)?"
+  #       % (query, depth, word_keys, key_units, key_units))
   dtype = query.dtype
 
   # Reshape from [batch_size, depth] to [batch_size, 1, depth]
   # for matmul.
+  query = array_ops.concat([query, query], 1)
   query = array_ops.expand_dims(query, 1)
 
   # Inner product along the query units dimension.
@@ -433,8 +435,8 @@ class CustomAttention(_BaseAttentionMechanism):
         query_layer=None,
         line_memory_layer=layers_core.Dense(
             num_units, name="line_memory_layer", use_bias=False),
-        word_memory_layer=layers_core.Dense(
-            num_units, name="word_emory_layer", use_bias=False),
+        # word_memory_layer=layers_core.Dense(
+        #     num_units, name="word_memory_layer", use_bias=False),
         line_memory=line_memory,
         word_memory=word_memory,
         probability_fn=wrapped_probability_fn,
