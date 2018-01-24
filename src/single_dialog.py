@@ -35,7 +35,7 @@ tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
 tf.flags.DEFINE_boolean("char_emb_overlap", True, 'if False, no overlap of word character tokens during embeddings')
 tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size of encoder states')
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
-tf.flags.DEFINE_integer("char_emb_length", 3, "Number of letters treated as an input token for character embeddings")
+tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
 
 # Output Specifications
 tf.flags.DEFINE_boolean('game', False, 'if True, show infinite game results')
@@ -116,7 +116,7 @@ class chatBot(object):
                                            self.embedding_size, self.decoder_vocab_to_index, self.candidate_sentence_size, 
                                            session=self.sess, hops=self.hops, max_grad_norm=self.max_grad_norm, 
                                            optimizer=self.optimizer, task_id=self.task_id, use_beam_search=self.use_beam_search,
-                                           use_attention=self.use_attention, dropout=self.dropout, char_emb=self.char_emb, reduce_states=self.reduce_states)
+                                           use_attention=self.use_attention, dropout=self.dropout, char_emb=self.char_emb, reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length)
         self.saver = tf.train.Saver(max_to_keep=50)
 
     def build_vocab(self, data):

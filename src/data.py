@@ -24,7 +24,7 @@ class Data(object):
         self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids = \
             self._extract_data_items(data)
         self._db_values_set = self._get_db_values_set(self._stories_ext, word_idx)
-        self._stories, self._story_sizes, self._story_tokens, self._story_word_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words = \
+        self._stories, self._story_sizes, self._story_tokens, self._story_word_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words, self._token_size = \
             self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, self._decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap)
         self._queries, self._query_sizes, self._query_tokens, self._query_word_sizes, self._read_queries = \
             self._vectorize_queries(self._queries_ext, word_idx, sentence_size, char_emb_length, char_overlap)
@@ -107,6 +107,11 @@ class Data(object):
     @property
     def db_values_set(self):
         return self._db_values_set
+
+    @property
+    def token_size(self):
+        return self._token_size
+
     
     def _get_db_values_set(self, stories, word_idx):
         inv_db_values_idx = set()
@@ -136,7 +141,7 @@ class Data(object):
         index_list = [ord(c) for c in token]
         index = 0
         for i in range(size):
-            index = index*(10**size) + index_list[i]
+            index = index*(256) + index_list[i]
         return index
 
     def _tokenize(self, word, size, overlap):
@@ -249,7 +254,7 @@ class Data(object):
                 pad_stories.append(pad_token)
             padded_tokens.append(np.array(pad_stories))
 
-        return S, SZ, padded_tokens, SWZ, S_in_readable_form, OOV_ids, OOV_size, OOV_words
+        return S, SZ, padded_tokens, SWZ, S_in_readable_form, OOV_ids, OOV_size, OOV_words, max_token_size
 
     def _vectorize_queries(self, queries, word_idx, sentence_size, char_emb_length, char_overlap):
         Q = []
@@ -348,6 +353,8 @@ class Batch(Data):
         self._story_word_sizes = data.story_word_sizes[start:end]
 
         self._query_word_sizes = data.query_word_sizes[start:end]
+
+        self._token_size = data.token_size
 
         # self._story_tokens = self._pad_tokens_story(data.story_tokens[start:end], self._story_word_sizes)
 

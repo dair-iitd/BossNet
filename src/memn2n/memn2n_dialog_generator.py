@@ -68,7 +68,8 @@ class MemN2NGeneratorDialog(object):
                  use_attention=False,
                  dropout=False,
                  char_emb=False,
-                 reduce_states=False):
+                 reduce_states=False,
+                 char_emb_size=256):
 
         """Creates an End-To-End Memory Network
 
@@ -124,6 +125,7 @@ class MemN2NGeneratorDialog(object):
         self._dropout = dropout
         self._char_emb = char_emb
         self._reduce_states = reduce_states
+        self._token_emb_size = char_emb_size
         
         # add unk and eos
         self.UNK = decoder_vocab_to_index["UNK"]
@@ -190,7 +192,7 @@ class MemN2NGeneratorDialog(object):
         self._oov_ids = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="oov_ids")
         self._oov_sizes = tf.placeholder(tf.int32, [None], name="oov_sizes")
         self._keep_prob = tf.placeholder(tf.float32)
-        self._token_size = tf.placeholder(tf.float32)
+        self._token_size = tf.placeholder(tf.int32)
 
     def _build_vars(self):
         '''
@@ -204,7 +206,7 @@ class MemN2NGeneratorDialog(object):
             C = tf.concat([nil_word_slot, self._init([self._decoder_vocab_size, self._embedding_size])], 0)
             self.C = tf.Variable(C, name="C")
 
-            self.Z = tf.Variable(self._init([256, self._embedding_size]), name="Z")
+            self.Z = tf.Variable(self._init([self._token_emb_size, self._embedding_size]), name="Z")
 
             self.H = tf.Variable(self._init([self._embedding_size, self._embedding_size]), name="H")
 
@@ -327,7 +329,7 @@ class MemN2NGeneratorDialog(object):
             if self._char_emb:
                 s_sizes = tf.reshape(self._sentence_word_sizes, [-1])
                 token_emb = tf.nn.embedding_lookup(self.Z, self._sentence_tokens)
-                s_tokens =  tf.reshape(token_emb, [-1, 45, self._embedding_size])
+                s_tokens =  tf.reshape(token_emb, tf.stack([-1, self._token_size, self._embedding_size]))
                 with tf.variable_scope("char_emb"):
                     (outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.char_fwd, self.char_bwd, s_tokens, sequence_length=s_sizes, dtype=tf.float32)
                 (f_state, b_state) = output_states
@@ -463,7 +465,7 @@ class MemN2NGeneratorDialog(object):
             feed_dict[self._sentence_tokens] = batch.story_tokens
         #     feed_dict[self._query_tokens] = batch.query_tokens
             feed_dict[self._sentence_word_sizes] = batch.story_word_sizes
-            feed_dict[self._token_size] = 45
+            feed_dict[self._token_size] = batch.token_size
         #     feed_dict[self._query_word_sizes] = batch.query_word_sizes
         if train:
             feed_dict[self._answers] = batch.answers
