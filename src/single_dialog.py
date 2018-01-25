@@ -34,6 +34,7 @@ tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score')
 tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
 tf.flags.DEFINE_boolean("char_emb_overlap", True, 'if False, no overlap of word character tokens during embeddings')
 tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size of encoder states')
+tf.flags.DEFINE_boolean("p_gen_loss", False, 'if True, uses additional p_gen loss during training')
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
 
@@ -87,6 +88,7 @@ class chatBot(object):
         self.char_emb_length = FLAGS.char_emb_length
         self.char_emb_overlap = FLAGS.char_emb_overlap
         self.reduce_states = FLAGS.reduce_states
+        self.p_gen_loss = FLAGS.p_gen_loss
 
         # Create Model Store Directory
         if not os.path.exists(self.model_dir):
@@ -116,7 +118,8 @@ class chatBot(object):
                                            self.embedding_size, self.decoder_vocab_to_index, self.candidate_sentence_size, 
                                            session=self.sess, hops=self.hops, max_grad_norm=self.max_grad_norm, 
                                            optimizer=self.optimizer, task_id=self.task_id, use_beam_search=self.use_beam_search,
-                                           use_attention=self.use_attention, dropout=self.dropout, char_emb=self.char_emb, reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length)
+                                           use_attention=self.use_attention, dropout=self.dropout, char_emb=self.char_emb, 
+                                           reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss)
         self.saver = tf.train.Saver(max_to_keep=50)
 
     def build_vocab(self, data):

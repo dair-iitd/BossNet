@@ -31,6 +31,7 @@ class Data(object):
         # Jan 6 : added answers with UNKs
         self._answers, self._answer_sizes, self._read_answers, self._answers_emb_lookup = \
             self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, self._decode_vocab_size)
+        self._intersection_set = self._intersection_set_mask(self._stories, self._queries, self._answers)
 
     @property
     def stories(self):
@@ -111,6 +112,10 @@ class Data(object):
     @property
     def token_size(self):
         return self._token_size
+
+    @property
+    def intersection_set(self):
+        return self._intersection_set
 
     
     def _get_db_values_set(self, stories, word_idx):
@@ -322,6 +327,21 @@ class Data(object):
 
         return A, AZ, A_in_readable_form, A_for_embeddding_lookup
 
+    def _get_input_output_intersection_vocab(self, story, query, answer):
+        input_vocab = set(list(chain.from_iterable(story.tolist())) + query.tolist())
+        output_vocab = set(answer.tolist())
+        vocab = input_vocab.intersection(output_vocab)
+        if 0 in vocab: vocab.remove(0)
+        return vocab
+
+    def _intersection_set_mask(self, stories, queries, answers):
+        mask = []
+        for story, query, answer in zip(stories, queries, answers):
+            vocab = self._get_input_output_intersection_vocab(story, query, answer)
+            dialog_mask = [1 if x in vocab else 0 for x in answer]
+            mask.append(np.array(dialog_mask))
+        return mask
+
 class Batch(Data):
 
     def __init__(self, data, start, end, unk_size=0, word_drop=False):
@@ -372,6 +392,9 @@ class Batch(Data):
 
         self._dialog_ids = data.dialog_ids[start:end]
 
+        self._intersection_set = data.intersection_set[start:end]
+
+
     # Jan 8 : randomly make a few words in the input as UNK
     def _random_unk(self, stories, queries, answers, db_values_set):
 
@@ -392,13 +415,6 @@ class Batch(Data):
             new_queries.append(query)
 
         return new_stories, new_queries
-
-    def _get_input_output_intersection_vocab(self, story, query, answer):
-        input_vocab = set(list(chain.from_iterable(story.tolist())) + query.tolist())
-        output_vocab = set(answer.tolist())
-        vocab = input_vocab.intersection(output_vocab)
-        if 0 in vocab: vocab.remove(0)
-        return vocab
 
     def _pad_tokens_story(self, tokens, token_sizes):
         max_token_size = 0

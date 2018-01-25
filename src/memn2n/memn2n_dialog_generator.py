@@ -69,7 +69,8 @@ class MemN2NGeneratorDialog(object):
                  dropout=False,
                  char_emb=False,
                  reduce_states=False,
-                 char_emb_size=256):
+                 char_emb_size=256,
+                 p_gen_loss=False):
 
         """Creates an End-To-End Memory Network
 
@@ -126,6 +127,7 @@ class MemN2NGeneratorDialog(object):
         self._char_emb = char_emb
         self._reduce_states = reduce_states
         self._token_emb_size = char_emb_size
+        self._p_gen_loss = p_gen_loss
         
         # add unk and eos
         self.UNK = decoder_vocab_to_index["UNK"]
@@ -181,6 +183,7 @@ class MemN2NGeneratorDialog(object):
         self._stories = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="stories")
         self._queries = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries")
         self._answers = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers")
+        self._intersection_mask = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="intersection_mask")
         self._answers_emb_lookup = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers_emb")
         self._sentence_sizes = tf.placeholder(tf.int32, [None, None], name="sentence_sizes")
         self._sentence_tokens = tf.placeholder(tf.int32, [None, None, self._sentence_size, None], name="story_tokens")
@@ -403,17 +406,24 @@ class MemN2NGeneratorDialog(object):
                 
                 answer_sizes = tf.reshape(self._answer_sizes,[-1])
                 helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
-                outputs,_,_ = dynamic_decode(self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size), self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
+                outputs,_,_,p_gens = dynamic_decode(self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size), self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
                 final_dists = outputs.rnn_output
                 max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
                 ans = self._answers[:, :max_length]
+                intersect_mask = self._intersection_mask[:, :max_length]
                 
                 target_weights = tf.reshape(self._answer_sizes,[-1])
                 target_weights = tf.sequence_mask(target_weights, self._candidate_sentence_size, dtype=tf.float32)
                 target_weights = target_weights[:, :max_length] 
 
-                crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
-                loss = tf.reduce_sum(crossent * target_weights)
+                if self._p_gen_loss:
+                    p_gen_logits = tf.concat([p_gens, (1-p_gens)], 2)
+                    p_gen_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=intersect_mask, logits=p_gen_logits)
+                    crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
+                    loss = tf.reduce_sum((crossent + p_gen_loss) * target_weights)
+                else:
+                    crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
+                    loss = tf.reduce_sum(crossent * target_weights)
 
         return loss, final_dists
 
@@ -434,7 +444,7 @@ class MemN2NGeneratorDialog(object):
                     helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
                     decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
 
-                outputs,_,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
+                outputs,_,_,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
                 final_dists = outputs.rnn_output
 
                 if self._use_beam_search:
@@ -461,6 +471,7 @@ class MemN2NGeneratorDialog(object):
         feed_dict[self._query_sizes] = batch.query_sizes
         feed_dict[self._oov_ids] = batch.oov_ids
         feed_dict[self._oov_sizes] = batch.oov_sizes
+        feed_dict[self._intersection_mask] = batch.intersection_set
         if self._char_emb:
             feed_dict[self._sentence_tokens] = batch.story_tokens
         #     feed_dict[self._query_tokens] = batch.query_tokens
