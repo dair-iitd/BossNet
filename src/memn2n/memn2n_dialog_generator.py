@@ -420,7 +420,7 @@ class MemN2NGeneratorDialog(object):
                     p_gen_logits = tf.concat([p_gens, (1-p_gens)], 2)
                     p_gen_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=intersect_mask, logits=p_gen_logits)
                     crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
-                    loss = tf.reduce_sum((crossent + p_gen_loss) * target_weights)
+                    loss = tf.reduce_sum((crossent + 0.5*p_gen_loss) * target_weights)
                 else:
                     crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
                     loss = tf.reduce_sum(crossent * target_weights)

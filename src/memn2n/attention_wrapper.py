@@ -209,6 +209,7 @@ class _BaseAttentionMechanism(AttentionMechanism):
           else self._values)
       self._batch_size = (self._keys.shape[0].value or array_ops.shape(self._keys)[0])
       self._alignments_size = (self._keys.shape[1].value or array_ops.shape(self._keys)[1])
+      self._embedding_size = (self._keys.shape[2].value or array_ops.shape(self._keys)[2])
       self._word_alignments_size = (self._word_values.shape[2].value or array_ops.shape(self._word_values)[2])
 
   @property
@@ -475,7 +476,7 @@ class CustomAttention(_BaseAttentionMechanism):
     score = tf.expand_dims(score, 1)
     word_alignments = math_ops.multiply(word_scores, score)
     word_alignments = tf.transpose(word_alignments, [0,2,1])
-    return alignments, tf.reshape(word_alignments, [self._batch_size, -1])
+    return alignments, tf.reshape(word_alignments, [self._batch_size, -1]), self._batch_size, self._embedding_size, self._char_emb
 
 
 class AttentionWrapperState(
@@ -542,7 +543,7 @@ def hardmax(logits, name=None):
 def _compute_attention(attention_mechanism, cell_output, previous_alignments,
                        attention_layer):
   """Computes the attention and alignments for a given attention_mechanism."""
-  alignments, word_alignments = attention_mechanism(
+  alignments, word_alignments, batch_size, embedding_size, char_emb = attention_mechanism(
       cell_output, previous_alignments=previous_alignments)
 
   # Reshape from [batch_size, memory_time] to [batch_size, 1, memory_time]
@@ -564,7 +565,18 @@ def _compute_attention(attention_mechanism, cell_output, previous_alignments,
   else:
     attention = context
 
-  return attention, word_alignments
+  if char_emb:
+    word_memory = tf.reshape(attention_mechanism.word_values,[batch_size, -1, embedding_size*2])
+  else:
+    word_memory = tf.reshape(attention_mechanism.word_values,[batch_size, -1, embedding_size])
+  expanded_alignments = array_ops.expand_dims(word_alignments, 1)
+  context = math_ops.matmul(expanded_alignments, word_memory)
+  context = array_ops.squeeze(context, [1])
+  if attention_layer is not None:
+    word_attention = attention_layer(array_ops.concat([cell_output, context], 1))
+  else:
+    word_attention = context
+  return attention, word_attention, word_alignments
 
 def linear(args, output_size, bias, bias_start=0.0, scope=None):
   """Linear map: sum_i(args[i] * W[i]), where W[i] is a variable.
@@ -941,7 +953,7 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
     all_attentions = []
     all_histories = []
     for i, attention_mechanism in enumerate(self._attention_mechanisms):
-      attention, alignments = _compute_attention(
+      attention, word_attention, alignments = _compute_attention(
           attention_mechanism, cell_output, previous_alignments[i],
           self._attention_layers[i] if self._attention_layers else None)
       alignment_history = previous_alignment_history[i].write(
@@ -960,9 +972,9 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
         alignment_history=self._item_or_tuple(all_histories))
 
     if self._dropout:
-      p_gens = tf.nn.dropout(tf.sigmoid(linear([attention, cell_state, cell_inputs], 1, True)), self._keep_prob)
+      p_gens = tf.nn.dropout(tf.sigmoid(linear([word_attention, cell_state, cell_inputs], 1, True)), self._keep_prob)
     else:
-      p_gens = tf.sigmoid(linear([attention, cell_state, cell_inputs], 1, True))
+      p_gens = tf.sigmoid(linear([word_attention, cell_state, cell_inputs], 1, True))
     
     if self._output_attention:
       return attention, next_state
