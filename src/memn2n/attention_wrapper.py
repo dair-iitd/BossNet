@@ -350,18 +350,18 @@ def _luong_word_score(query, word_keys, scale, size, char_emb):
   """
   depth = query.get_shape()[-1]
   key_units = word_keys.get_shape()[-1]
-  # if 2*depth != key_units:
-  #   raise ValueError(
-  #       "Incompatible or unknown inner dimensions between query and keys.  "
-  #       "Query (%s) has units: %s.  Keys (%s) have units: %s.  "
-  #       "Perhaps you need to set num_units to the keys' dimension (%s)?"
-  #       % (query, depth, word_keys, key_units, key_units))
+  if depth != key_units:
+    raise ValueError(
+        "Incompatible or unknown inner dimensions between query and keys.  "
+        "Query (%s) has units: %s.  Keys (%s) have units: %s.  "
+        "Perhaps you need to set num_units to the keys' dimension (%s)?"
+        % (query, depth, word_keys, key_units, key_units))
   dtype = query.dtype
 
   # Reshape from [batch_size, depth] to [batch_size, 1, depth]
   # for matmul.
-  if char_emb:
-    query = array_ops.concat([query, query], 1)
+  # if char_emb:
+  #   query = array_ops.concat([query, query], 1)
 
   query = array_ops.expand_dims(query, 1)
 
@@ -972,9 +972,9 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
         alignment_history=self._item_or_tuple(all_histories))
 
     if self._dropout:
-      p_gens = tf.nn.dropout(tf.sigmoid(linear([word_attention, cell_state, cell_inputs], 1, True)), self._keep_prob)
+      p_gens = tf.nn.dropout(tf.sigmoid(linear([cell_state, cell_inputs], 1, True)), self._keep_prob)
     else:
-      p_gens = tf.sigmoid(linear([word_attention, cell_state, cell_inputs], 1, True))
+      p_gens = tf.sigmoid(linear([cell_state, cell_inputs], 1, True))
     
     if self._output_attention:
       return attention, next_state

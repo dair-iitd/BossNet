@@ -281,11 +281,7 @@ class Data(object):
             QWZ.append(np.array(qw))
             Q_in_readable_form.append(' '.join([str(x) for x in query]))
 
-        max_token_size = 0
-        for size in QWZ:
-            token_size = np.amax(np.amax(size))
-            if token_size > max_token_size:
-                max_token_size = token_size
+        max_token_size = self._token_size
         padded_tokens = []
         for token in Word_tokens:
             pad_token = []
