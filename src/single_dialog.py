@@ -182,11 +182,8 @@ class chatBot(object):
                 sys.stdout.flush()
                 
                 # Save best model
-                if train_accuracies[0] >= best_validation_accuracy:
-                    best_validation_accuracy = train_accuracies[0]
-                    self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
                 if val_accuracies[1] >= best_validation_accuracy:
-                    best_validation_accuracy = train_accuracies[1]
+                    best_validation_accuracy = val_accuracies[1]
                     self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
 
     def test(self):
@@ -203,7 +200,7 @@ class chatBot(object):
         if self.isInteractive:
             self.interactive()
         else:
-            Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
+            Data_test = Data(self.trainData, self.word_idx, self.sentence_size, 
                              self.batch_size, self.memory_size, 
                              self.decoder_vocab_to_index, self.candidate_sentence_size, 
                              self.char_emb_length, self.char_emb_overlap)
