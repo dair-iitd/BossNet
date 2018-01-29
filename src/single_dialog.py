@@ -60,10 +60,7 @@ class chatBot(object):
         # Define Parameters of ChatBot
         self.data_dir = FLAGS.data_dir
         self.task_id = FLAGS.task_id
-        word_drop_str = ""
-        if FLAGS.word_drop:
-            word_drop_str="_words_dropped_" + str(FLAGS.unk_size)
-        self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + word_drop_str + "_model/"
+        self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + "_emb-size-" + str(FLAGS.embedding_size) + "_model/"
         self.logs_dir = FLAGS.logs_dir
         self.isInteractive = FLAGS.interactive
         self.OOV = FLAGS.OOV
@@ -227,7 +224,7 @@ class chatBot(object):
         np.random.shuffle(batches)
         total_cost = 0.0
         for i, (start, end) in enumerate(batches):
-            print(i)
+            #print(i)
             cost_t, logits = self.model.batch_fit(Batch(data, start, end, self.unk_size, self.word_drop))
             total_cost += cost_t
         return total_cost
