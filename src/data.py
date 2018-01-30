@@ -23,7 +23,6 @@ class Data(object):
         self._decode_vocab_size = len(decoder_vocab)
         self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids = \
             self._extract_data_items(data)
-        self._db_values_set = self._get_db_values_set(self._stories_ext, word_idx)
         self._stories, self._story_sizes, self._story_tokens, self._story_word_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words, self._token_size = \
             self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, self._decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap)
         self._queries, self._query_sizes, self._query_tokens, self._query_word_sizes, self._read_queries = \
@@ -31,6 +30,7 @@ class Data(object):
         # Jan 6 : added answers with UNKs
         self._answers, self._answer_sizes, self._read_answers, self._answers_emb_lookup = \
             self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, self._decode_vocab_size)
+        self._db_values_set = self._get_db_values_set(self._stories_ext, decoder_vocab, self._oov_words)
         self._intersection_set = self._intersection_set_mask(self._stories, self._queries, self._answers)
 
     @property
@@ -117,16 +117,21 @@ class Data(object):
     def intersection_set(self):
         return self._intersection_set
 
-    
-    def _get_db_values_set(self, stories, word_idx):
-        inv_db_values_idx = set()
-        # for i, story in enumerate(stories):
-        #     for k, sentence in enumerate(story, 1):
-        #         if '$db' in sentence:
-        #             for w in sentence[:-2]:
-        #                 if not w.startswith('r_'):
-        #                     inv_db_values_idx.add(word_idx[w])
-        return inv_db_values_idx
+    def _get_db_values_set(self, stories, decoder_vocab, oov_words):
+        db_set = []
+        for i, story in enumerate(stories):
+            inv_db_values_idx = set()
+            for k, sentence in enumerate(story, 1):
+                if '$db' in sentence:
+                    for w in sentence[:-2]:
+                        if not w.startswith('r_'):
+                            if w not in decoder_vocab:
+                                idx = oov_words[i].tolist().index(w)
+                                inv_db_values_idx.add(len(decoder_vocab) + idx)
+                            else:
+                                inv_db_values_idx.add(decoder_vocab[w])
+            db_set.append(inv_db_values_idx)
+        return db_set
 
     def _extract_data_items(self, data):
         data.sort(key=lambda x:len(x[0]),reverse=True)
@@ -372,10 +377,6 @@ class Batch(Data):
 
         self._token_size = data.token_size
 
-        # self._story_tokens = self._pad_tokens_story(data.story_tokens[start:end], self._story_word_sizes)
-
-        # self._query_tokens = self._pad_tokens_query(data.query_tokens[start:end], self._query_word_sizes)
-
         self._read_stories = data.readable_stories[start:end]
 
         self._read_queries = data.readable_queries[start:end]
@@ -385,6 +386,8 @@ class Batch(Data):
         self._oov_ids = data.oov_ids[start:end]
 
         self._oov_sizes = data.oov_sizes[start:end]
+
+        self._db_values_set = data.db_values_set[start:end]
 
         self._dialog_ids = data.dialog_ids[start:end]
 
@@ -411,37 +414,3 @@ class Batch(Data):
             new_queries.append(query)
 
         return new_stories, new_queries
-
-    def _pad_tokens_story(self, tokens, token_sizes):
-        max_token_size = 0
-        for size in token_sizes:
-            token_size = np.amax(np.amax(size))
-            if token_size > max_token_size:
-                max_token_size = token_size
-        padded_tokens = []
-        for story in tokens:
-            pad_stories = []
-            for token in story:
-                pad_token = []
-                for token_list in token:
-                    token_list = token_list + [0]*(max_token_size - len(token_list))
-                    pad_token.append(token_list)
-                pad_stories.append(pad_token)
-            padded_tokens.append(np.array(pad_stories))
-        return padded_tokens
-
-    def _pad_tokens_query(self, tokens, token_sizes):
-        max_token_size = 0
-        for size in token_sizes:
-            token_size = np.amax(np.amax(size))
-            if token_size > max_token_size:
-                max_token_size = token_size
-        padded_tokens = []
-        for token in tokens:
-            pad_token = []
-            for token_list in token:
-                token_list = token_list + [0]*(max_token_size - len(token_list))
-                pad_token.append(token_list)
-            padded_tokens.append(pad_token)
-        return padded_tokens
-
