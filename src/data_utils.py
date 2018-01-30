@@ -247,5 +247,30 @@ def bleu_accuracy_score(preds, vals, word_map=None, isTrain=True):
         reference = [word_map[x] if x in word_map else 'UNK' for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
         hypothesis = [word_map[x] if x in word_map else 'UNK' for x in val if x != EOS_INDEX and x != PAD_INDEX]
         total_score += corpus_bleu([[reference]], [hypothesis])
-
     return (float(total_score) / len(preds))*100
+
+def new_eval_score(preds, vals, dbset, word_map=None):
+    match=0
+    total=0
+    match_acc=0
+
+    for pred, val, db_rest in zip(preds, vals, dbset):
+        answer = [word_map[x] if x in word_map else 'UNK' for x in val if x != EOS_INDEX and x != PAD_INDEX]
+
+        if ['what', 'do', 'you', 'think', 'of', 'this', 'option', ':'] in answer:
+            total += 1
+            ans_pred = val[8]
+            pred_rest = pred[8]
+            if pred_rest == ans_pred:
+                match_acc += 1
+            if pred_rest in db_rest:
+                match += 1
+
+    return [100.0*match_acc/total, 100.0*match/total]
+
+
+
+
+
+
+

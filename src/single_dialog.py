@@ -31,6 +31,7 @@ tf.flags.DEFINE_boolean('use_attention', False, 'if True, uses attention')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
 tf.flags.DEFINE_boolean('word_drop', False, 'if True, uses random word dropout')
 tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score')
+tf.flags.DEFINE_boolean("new_eval", True, 'if True, uses new evaluation score')
 tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
 tf.flags.DEFINE_boolean("char_emb_overlap", True, 'if False, no overlap of word character tokens during embeddings')
 tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size of encoder states')
@@ -38,9 +39,10 @@ tf.flags.DEFINE_boolean("p_gen_loss", False, 'if True, uses additional p_gen los
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
 
+
 # Output Specifications
 tf.flags.DEFINE_boolean('game', False, 'if True, show infinite game results')
-tf.flags.DEFINE_integer("evaluation_interval", 10, "Evaluate and print results every x epochs")
+tf.flags.DEFINE_integer("evaluation_interval", 2, "Evaluate and print results every x epochs")
 
 # Task Type
 tf.flags.DEFINE_boolean('train', False, 'if True, begin to train')
@@ -86,6 +88,7 @@ class chatBot(object):
         self.char_emb_overlap = FLAGS.char_emb_overlap
         self.reduce_states = FLAGS.reduce_states
         self.p_gen_loss = FLAGS.p_gen_loss
+        self.new_eval = FLAGS.new_eval
 
         # Create Model Store Directory
         if not os.path.exists(self.model_dir):
@@ -205,10 +208,16 @@ class chatBot(object):
                              self.decoder_vocab_to_index, self.candidate_sentence_size, 
                              self.char_emb_length, self.char_emb_overlap)
             n_test = len(Data_test.stories)
-            test_acc_old, test_acc_new = self.batch_predict(Data_test, n_test)
+            print("Test Size", n_test)
+            test_accuracies = self.batch_predict(Data_test, n_test)
 
             print("Test Size      : ", n_test)
-            print("Test Accuracy  : ", test_acc_old, test_acc_new)      
+            print("Test Accuracy  : ", test_accuracies[0], test_accuracies[1])   
+
+            if (self.task_id==3 or self.task_id==5):
+                print('Restaurant Recommendation Accuracy : ', test_accuracies[2][0], test_accuracies[3][0])
+                print('Restaurant Recommendation from DB Accuracy : ', test_accuracies[2][1], test_accuracies[3][1])
+               
             print("------------------------")
 
     def interactive(self):
@@ -244,6 +253,8 @@ class chatBot(object):
         output = [substring_accuracy_score(old_preds, data.answers), substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
         if self.bleu_score:
             output += [bleu_accuracy_score(old_preds, data.answers, word_map=self.decoder_index_to_vocab), bleu_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+        if self.new_eval and (self.task_id==3 or self.task_id==5):
+            output += [new_eval_score(old_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab), new_eval_score(new_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
         return output
 
     def close_session(self):
