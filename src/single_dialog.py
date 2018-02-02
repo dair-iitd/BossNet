@@ -203,7 +203,7 @@ class chatBot(object):
         if self.isInteractive:
             self.interactive()
         else:
-            Data_test = Data(self.trainData, self.word_idx, self.sentence_size, 
+            Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
                              self.batch_size, self.memory_size, 
                              self.decoder_vocab_to_index, self.candidate_sentence_size, 
                              self.char_emb_length, self.char_emb_overlap)
