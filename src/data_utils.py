@@ -229,7 +229,8 @@ def substring_accuracy_score(preds, vals, word_map=None, isTrain=True):
     for pred, val in zip(preds, vals):
         reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
         hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
-        if is_Sublist(reference, hypothesis) == True:
+        #if is_Sublist(reference, hypothesis) == True:
+        if reference==hypothesis):
             total_score += 1.0
         else:
             # Jan 6 : print incorrect results while testing
