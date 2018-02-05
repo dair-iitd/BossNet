@@ -449,6 +449,7 @@ class Batch(Data):
                 sampled_words = []
             else:
                 sampled_words = list(db_output_vocab)
+                print sampled_words
             for element in sampled_words:
                 story[story == element] = UNK_INDEX
                 query[query == element] = UNK_INDEX

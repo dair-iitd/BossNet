@@ -79,7 +79,7 @@ class chatBot(object):
         self.use_beam_search= FLAGS.use_beam_search
         self.use_attention = FLAGS.use_attention
         self.dropout = FLAGS.dropout
-        self.word_drop = FLAGS.word_drop
+        self.word_drop_flag = FLAGS.word_drop
         self.unk_size = FLAGS.unk_size
         self.bleu_score = FLAGS.bleu_score
         self.is_train = FLAGS.train
@@ -162,6 +162,8 @@ class chatBot(object):
                       range(self.batch_size, n_train, self.batch_size))
         batches = [(start, end) for start, end in batches]
         best_validation_accuracy = 0
+        model_count = 0
+        self.word_drop = False
 
         # Train Model in Batch Mode
         print('-----------------------')
@@ -186,8 +188,12 @@ class chatBot(object):
                 
                 # Save best model
                 if val_accuracies[1] >= best_validation_accuracy:
+                    model_count += 1
                     best_validation_accuracy = val_accuracies[1]
                     self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
+
+                if model_count >= 8 and self.word_drop_flag:
+                    self.word_drop = True
 
     def test(self):
         '''

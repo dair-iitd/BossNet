@@ -13,7 +13,8 @@ __all__ =  ["load_candidates",
             "tokenize", 
             "pad_to_answer_size", 
             "substring_accuracy_score",
-            "bleu_accuracy_score"]
+            "bleu_accuracy_score",
+            "new_eval_score"]
 
 ###################################################################################################
 #########                                  Global Variables                              ##########
@@ -230,7 +231,7 @@ def substring_accuracy_score(preds, vals, word_map=None, isTrain=True):
         reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
         hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
         #if is_Sublist(reference, hypothesis) == True:
-        if reference==hypothesis):
+        if reference==hypothesis:
             total_score += 1.0
         else:
             # Jan 6 : print incorrect results while testing
