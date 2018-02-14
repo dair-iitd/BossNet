@@ -38,7 +38,7 @@ tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size
 tf.flags.DEFINE_boolean("p_gen_loss", False, 'if True, uses additional p_gen loss during training')
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
-
+tf.flags.DEFINE_boolean("gated", False, "if True, uses gated memory network")
 
 # Output Specifications
 tf.flags.DEFINE_boolean('game', False, 'if True, show infinite game results')
@@ -58,222 +58,235 @@ FLAGS = tf.flags.FLAGS
 
 class chatBot(object):
 
-    def __init__(self):
-        # Define Parameters of ChatBot
-        self.data_dir = FLAGS.data_dir
-        self.task_id = FLAGS.task_id
-        self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + "_emb-size-" + str(FLAGS.embedding_size) + "_model/"
-        self.logs_dir = FLAGS.logs_dir
-        self.isInteractive = FLAGS.interactive
-        self.OOV = FLAGS.OOV
-        self.memory_size = FLAGS.memory_size
-        self.random_state = FLAGS.random_state
-        self.batch_size = FLAGS.batch_size
-        self.learning_rate = FLAGS.learning_rate
-        self.epsilon = FLAGS.epsilon
-        self.max_grad_norm = FLAGS.max_grad_norm
-        self.evaluation_interval = FLAGS.evaluation_interval
-        self.hops = FLAGS.hops
-        self.epochs = FLAGS.epochs
-        self.embedding_size = FLAGS.embedding_size
-        self.use_beam_search= FLAGS.use_beam_search
-        self.use_attention = FLAGS.use_attention
-        self.dropout = FLAGS.dropout
-        self.word_drop_flag = FLAGS.word_drop
-        self.unk_size = FLAGS.unk_size
-        self.bleu_score = FLAGS.bleu_score
-        self.is_train = FLAGS.train
-        self.char_emb = FLAGS.char_emb
-        self.char_emb_length = FLAGS.char_emb_length
-        self.char_emb_overlap = FLAGS.char_emb_overlap
-        self.reduce_states = FLAGS.reduce_states
-        self.p_gen_loss = FLAGS.p_gen_loss
-        self.new_eval = FLAGS.new_eval
+	def __init__(self):
+		# Define Parameters of ChatBot
+		self.data_dir = FLAGS.data_dir
+		self.task_id = FLAGS.task_id
+		self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + "_emb-size-" + str(FLAGS.embedding_size) + "_model/"
+		self.logs_dir = FLAGS.logs_dir
+		self.isInteractive = FLAGS.interactive
+		self.OOV = FLAGS.OOV
+		self.memory_size = FLAGS.memory_size
+		self.random_state = FLAGS.random_state
+		self.batch_size = FLAGS.batch_size
+		self.learning_rate = FLAGS.learning_rate
+		self.epsilon = FLAGS.epsilon
+		self.max_grad_norm = FLAGS.max_grad_norm
+		self.evaluation_interval = FLAGS.evaluation_interval
+		self.hops = FLAGS.hops
+		self.epochs = FLAGS.epochs
+		self.embedding_size = FLAGS.embedding_size
+		self.use_beam_search= FLAGS.use_beam_search
+		self.use_attention = FLAGS.use_attention
+		self.dropout = FLAGS.dropout
+		self.word_drop_flag = FLAGS.word_drop
+		self.unk_size = FLAGS.unk_size
+		self.bleu_score = FLAGS.bleu_score
+		self.is_train = FLAGS.train
+		self.char_emb = FLAGS.char_emb
+		self.char_emb_length = FLAGS.char_emb_length
+		self.char_emb_overlap = FLAGS.char_emb_overlap
+		self.reduce_states = FLAGS.reduce_states
+		self.p_gen_loss = FLAGS.p_gen_loss
+		self.new_eval = FLAGS.new_eval
+		self.gated = FLAGS.gated
 
-        # Create Model Store Directory
-        if not os.path.exists(self.model_dir):
-            os.makedirs(self.model_dir)
-        
-        # Print Task Information
-        if self.OOV:
-            print("Task ", self.task_id, " learning rate : ", self.learning_rate, " with OOV")
-        else:
-            print("Task ", self.task_id, " learning rate : ", self.learning_rate)
-        
-        # Load Decoder Vocabulary
-        self.decoder_vocab_to_index, self.decoder_index_to_vocab, self.candidate_sentence_size = get_decoder_vocab(self.data_dir, self.task_id)
-        print("Decoder Vocab Size : ", len(self.decoder_vocab_to_index))
+		# Create Model Store Directory
+		if not os.path.exists(self.model_dir):
+			os.makedirs(self.model_dir)
+		
+		# Print Task Information
+		if self.OOV:
+			print("Task ", self.task_id, " learning rate : ", self.learning_rate, " with OOV")
+		else:
+			print("Task ", self.task_id, " learning rate : ", self.learning_rate)
+		
+		# Load Decoder Vocabulary
+		self.decoder_vocab_to_index, self.decoder_index_to_vocab, self.candidate_sentence_size = get_decoder_vocab(self.data_dir, self.task_id)
+		print("Decoder Vocab Size : ", len(self.decoder_vocab_to_index))
 
-        # Retreive Task Data
-        self.trainData, self.testData, self.valData = load_dialog_task(self.data_dir, self.task_id, self.OOV)
-        self.trainDataVocab, self.testDataVocab, self.valDataVocab = load_dialog_task(self.data_dir, self.task_id, False)
-        # self.dataVocab = self.trainDataVocab + self.testDataVocab + self.valDataVocab
-        # Jan 8 : Build vocab only with training data
-        self.build_vocab(self.trainDataVocab)
+		# Retreive Task Data
+		self.trainData, self.testData, self.valData = load_dialog_task(self.data_dir, self.task_id, self.OOV)
+		self.trainDataVocab, self.testDataVocab, self.valDataVocab = load_dialog_task(self.data_dir, self.task_id, False)
+		
+		# Build vocab only with training data
+		self.build_vocab(self.trainDataVocab)
 
-        # Define MemN2N + Generator Model
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=self.epsilon)
-        self.sess = tf.Session()
-        self.model = MemN2NGeneratorDialog(self.batch_size, self.vocab_size, self.sentence_size, 
-                                           self.embedding_size, self.decoder_vocab_to_index, self.candidate_sentence_size, 
-                                           session=self.sess, hops=self.hops, max_grad_norm=self.max_grad_norm, 
-                                           optimizer=self.optimizer, task_id=self.task_id, use_beam_search=self.use_beam_search,
-                                           use_attention=self.use_attention, dropout=self.dropout, char_emb=self.char_emb, 
-                                           reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss)
-        self.saver = tf.train.Saver(max_to_keep=50)
+		# Define MemN2N + Generator Model
+		self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=self.epsilon)
+		self.sess = tf.Session()
+		self.model = MemN2NGeneratorDialog(self.batch_size, self.vocab_size, self.sentence_size, 
+										   self.embedding_size, self.decoder_vocab_to_index, self.candidate_sentence_size, 
+										   session=self.sess, hops=self.hops, max_grad_norm=self.max_grad_norm, 
+										   optimizer=self.optimizer, task_id=self.task_id, use_beam_search=self.use_beam_search,
+										   use_attention=self.use_attention, dropout=self.dropout, char_emb=self.char_emb, 
+										   reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss,
+										   gated=self.gated)
+		self.saver = tf.train.Saver(max_to_keep=4)
 
-    def build_vocab(self, data):
-        '''
-            Get vocabulary from the data (Train + Validation + Test)
-        '''
-        vocab = reduce(lambda x, y: x | y, (set(list(chain.from_iterable(s)) + q) for s, q, a, start in data))
-        vocab = sorted(vocab)
-        # Jan 6 : UNK was missing in train
-        self.word_idx = dict((c, i + 2) for i, c in enumerate(vocab))
-        self.word_idx['UNK']=1
-        max_story_size = max(map(len, (s for s, _, _, _ in data)))
-        self.sentence_size = max(map(len, chain.from_iterable(s for s, _, _, _ in data)))
-        query_size = max(map(len, (q for _, q, _, _ in data)))
-        self.memory_size = min(self.memory_size, max_story_size)
-        self.vocab_size = len(self.word_idx) + 1  # +1 for nil word
-        self.sentence_size = max(query_size, self.sentence_size)
-        print("Input Vocab Size   : ", self.vocab_size)
+	def build_vocab(self, data):
+		'''
+			Get vocabulary from the data (Train + Validation + Test)
+		'''
+		vocab = reduce(lambda x, y: x | y, (set(list(chain.from_iterable(s)) + q) for s, q, a, start in data))
+		vocab = sorted(vocab)
+		# Jan 6 : UNK was missing in train
+		self.word_idx = dict((c, i + 2) for i, c in enumerate(vocab))
+		self.word_idx['UNK']=1
+		max_story_size = max(map(len, (s for s, _, _, _ in data)))
+		self.sentence_size = max(map(len, chain.from_iterable(s for s, _, _, _ in data)))
+		query_size = max(map(len, (q for _, q, _, _ in data)))
+		self.memory_size = min(self.memory_size, max_story_size)
+		self.vocab_size = len(self.word_idx) + 1  # +1 for nil word
+		self.sentence_size = max(query_size, self.sentence_size)
+		print("Input Vocab Size   : ", self.vocab_size)
 
-    def train(self):
-        '''
-            Train the model
-        '''
-        # Get Data in usable form
-        Data_train = Data(self.trainData, self.word_idx, self.sentence_size, 
-                          self.batch_size, self.memory_size, 
-                          self.decoder_vocab_to_index, self.candidate_sentence_size, 
-                          self.char_emb_length, self.char_emb_overlap)
-        Data_val = Data(self.valData, self.word_idx, self.sentence_size, 
-                        self.batch_size, self.memory_size, 
-                        self.decoder_vocab_to_index, self.candidate_sentence_size, 
-                        self.char_emb_length, self.char_emb_overlap)
-        # Create Batches
-        n_train = len(Data_train.stories)
-        n_val = len(Data_val.stories)
-        print("Training Size", n_train)
-        print("Validation Size", n_val)
-        tf.set_random_seed(self.random_state)
-        batches = zip(range(0, n_train - self.batch_size, self.batch_size),
-                      range(self.batch_size, n_train, self.batch_size))
-        batches = [(start, end) for start, end in batches]
-        best_validation_accuracy = 0
-        model_count = 0
-        self.word_drop = False
+	def train(self):
+		'''
+			Train the model
+		'''
+		# Get Data in usable form
+		Data_train = Data(self.trainData, self.word_idx, self.sentence_size, 
+						  self.batch_size, self.memory_size, 
+						  self.decoder_vocab_to_index, self.candidate_sentence_size, 
+						  self.char_emb_length, self.char_emb_overlap)
+		Data_val = Data(self.valData, self.word_idx, self.sentence_size, 
+						self.batch_size, self.memory_size, 
+						self.decoder_vocab_to_index, self.candidate_sentence_size, 
+						self.char_emb_length, self.char_emb_overlap)
+		# Create Batches
+		n_train = len(Data_train.stories)
+		n_val = len(Data_val.stories)
+		print("Training Size", n_train)
+		print("Validation Size", n_val)
+		tf.set_random_seed(self.random_state)
+		batches = zip(range(0, n_train - self.batch_size, self.batch_size),
+					  range(self.batch_size, n_train, self.batch_size))
+		batches = [(start, end) for start, end in batches]
+		best_validation_accuracy = 0
+		model_count = 0
+		self.word_drop = False
 
-        # Train Model in Batch Mode
-        print('-----------------------')
-        for t in range(1, self.epochs + 1):
-            total_cost = self.batch_train(Data_train, batches)
-            print('Epoch', t, ' Total Cost:', total_cost)
-            
-            # Evaluate Model
-            if t % self.evaluation_interval == 0:
-                train_accuracies = self.batch_predict(Data_train, n_train)
-                val_accuracies = self.batch_predict(Data_val, n_val)
-                print('-----------------------')
-                print('Epoch', t)
-                print('Total Cost:', total_cost)
-                print('Training Accuracy Score:', train_accuracies[0], train_accuracies[1])
-                print('Validation Accuracy Score:', val_accuracies[0], val_accuracies[1])
-                if self.bleu_score:
-                    print('Training Bleu Score:', train_accuracies[2], train_accuracies[3])
-                    print('Validation Bleu Score:', val_accuracies[2], val_accuracies[3])
-                print('-----------------------')
-                sys.stdout.flush()
-                
-                # Save best model
-                if val_accuracies[1] >= best_validation_accuracy:
-                    model_count += 1
-                    best_validation_accuracy = val_accuracies[1]
-                    self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
+		# Train Model in Batch Mode
+		print('-----------------------')
+		for t in range(1, self.epochs + 1):
+			total_cost = self.batch_train(Data_train, batches)
+			print('Epoch', t, ' Total Cost:', total_cost)
+			
+			# Evaluate Model
+			if t % self.evaluation_interval == 0:
+				train_accuracies = self.batch_predict(Data_train, n_train)
+				val_accuracies = self.batch_predict(Data_val, n_val)
+				print('-----------------------')
+				print('Epoch', t)
+				print('Total Cost:', total_cost)
+				print("Training Accuracy  : ", train_accuracies[0][0], train_accuracies[0][1])
+				print("Training Accuracy + Attention : ", train_accuracies[1][0], train_accuracies[1][1])
+				print("Validation Accuracy  : ", val_accuracies[0][0], val_accuracies[0][1])
+				print("Validation Accuracy + Attention : ", val_accuracies[1][0], val_accuracies[1][1])
+				idx1 = 2; idx2 = 3
+				if self.bleu_score:
+					print('Training Bleu Score:', train_accuracies[idx1], train_accuracies[idx2])
+					print('Validation Bleu Score:', val_accuracies[idx1], val_accuracies[idx2])
+					idx1 += 1; idx2 += 1
+				if self.new_eval and (self.task_id==3 or self.task_id==5):
+					print('Restaurant Recommendation Accuracy : ', test_accuracies[idx1][0], test_accuracies[idx2][0])
+					print('Restaurant Recommendation from DB Accuracy : ', test_accuracies[idx1][1], test_accuracies[idx2][1])
+				print('-----------------------')
+				sys.stdout.flush()
+				
+				# Save best model
+				if val_accuracies[1] >= best_validation_accuracy:
+					model_count += 1
+					best_validation_accuracy = val_accuracies[1]
+					self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
 
-                if model_count >= 8 and self.word_drop_flag:
-                    self.word_drop = True
+				if model_count >= 8 and self.word_drop_flag:
+					self.word_drop = True
 
-    def test(self):
-        '''
-            Test the model
-        '''
-        # Look for previously saved checkpoint
-        ckpt = tf.train.get_checkpoint_state(self.model_dir)
-        if ckpt and ckpt.model_checkpoint_path:
-            self.saver.restore(self.sess, ckpt.model_checkpoint_path)
-        else:
-            print("...no checkpoint found...")
+	def test(self):
+		'''
+			Test the model
+		'''
+		# Look for previously saved checkpoint
+		ckpt = tf.train.get_checkpoint_state(self.model_dir)
+		if ckpt and ckpt.model_checkpoint_path:
+			self.saver.restore(self.sess, ckpt.model_checkpoint_path)
+		else:
+			print("...no checkpoint found...")
 
-        if self.isInteractive:
-            self.interactive()
-        else:
-            Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
-                             self.batch_size, self.memory_size, 
-                             self.decoder_vocab_to_index, self.candidate_sentence_size, 
-                             self.char_emb_length, self.char_emb_overlap)
-            n_test = len(Data_test.stories)
-            print("Test Size", n_test)
-            test_accuracies = self.batch_predict(Data_test, n_test)
+		if self.isInteractive:
+			self.interactive()
+		else:
+			Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
+							 self.batch_size, self.memory_size, 
+							 self.decoder_vocab_to_index, self.candidate_sentence_size, 
+							 self.char_emb_length, self.char_emb_overlap)
+			n_test = len(Data_test.stories)
+			print("Test Size", n_test)
+			test_accuracies = self.batch_predict(Data_test, n_test)
 
-            print("Test Size      : ", n_test)
-            print("Test Accuracy  : ", test_accuracies[0], test_accuracies[1])   
+			print("Test Size      : ", n_test)
+			print("Test Accuracy  : ", test_accuracies[0][0], test_accuracies[0][1])
+			print("Test Accuracy + Attention : ", test_accuracies[1][0], test_accuracies[1][1])
+			idx1 = 2; idx2 = 3   
+			if self.bleu_score:
+					print('Training Bleu Score:', train_accuracies[idx1], train_accuracies[idx2])
+					print('Validation Bleu Score:', val_accuracies[idx1], val_accuracies[idx2])
+					idx += 1; idx2 += 1
+			if self.new_eval and (self.task_id==3 or self.task_id==5):
+				print('Restaurant Recommendation Accuracy : ', test_accuracies[idx1][0], test_accuracies[idx2][0])
+				print('Restaurant Recommendation from DB Accuracy : ', test_accuracies[idx1][1], test_accuracies[idx2][1])
+			   
+			print("------------------------")
 
-            if (self.task_id==3 or self.task_id==5):
-                print('Restaurant Recommendation Accuracy : ', test_accuracies[2][0], test_accuracies[3][0])
-                print('Restaurant Recommendation from DB Accuracy : ', test_accuracies[2][1], test_accuracies[3][1])
-               
-            print("------------------------")
+	def interactive(self):
+		print("To Be Implemented")
 
-    def interactive(self):
-        print("To Be Implemented")
+	def batch_train(self, data, batches):
+		'''
+			Train Model for a Batch of Input Data
+		'''
+		np.random.shuffle(batches)
+		total_cost = 0.0
+		for i, (start, end) in enumerate(batches):
+			cost_t, logits = self.model.batch_fit(Batch(data, start, end, self.unk_size, self.word_drop))
+			total_cost += cost_t
+		return total_cost
 
-    def batch_train(self, data, batches):
-        '''
-            Train Model for a Batch of Input Data
-        '''
-        np.random.shuffle(batches)
-        total_cost = 0.0
-        for i, (start, end) in enumerate(batches):
-            #print(i)
-            cost_t, logits = self.model.batch_fit(Batch(data, start, end, self.unk_size, self.word_drop))
-            total_cost += cost_t
-        return total_cost
+	def batch_predict(self, data, n):
+		'''
+			Get Predictions for Input Data batchwise
+		'''
+		old_preds = []
+		new_preds = []
+		count = 0
+		for start in range(0, n, self.batch_size):
+			end = start + self.batch_size
+			count += 1
+			if count >= n / self.batch_size:
+				break
+			old_pred, new_pred = self.model.predict(Batch(data, start, end))
+			old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
+			new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
+		output = [substring_accuracy_score(old_preds, data.answers), substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+		if self.bleu_score:
+			output += [bleu_accuracy_score(old_preds, data.answers, word_map=self.decoder_index_to_vocab), bleu_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+		if self.new_eval and (self.task_id==3 or self.task_id==5):
+			output += [new_eval_score(old_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab), new_eval_score(new_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
+		return output
 
-    def batch_predict(self, data, n):
-        '''
-            Get Predictions for Input Data batchwise
-        '''
-        old_preds = []
-        new_preds = []
-        count = 0
-        for start in range(0, n, self.batch_size):
-            end = start + self.batch_size
-            count += 1
-            if count >= n / self.batch_size:
-                break
-            old_pred, new_pred = self.model.predict(Batch(data, start, end))
-            old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
-            new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
-        output = [substring_accuracy_score(old_preds, data.answers), substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
-        if self.bleu_score:
-            output += [bleu_accuracy_score(old_preds, data.answers, word_map=self.decoder_index_to_vocab), bleu_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
-        if self.new_eval and (self.task_id==3 or self.task_id==5):
-            output += [new_eval_score(old_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab), new_eval_score(new_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
-        return output
-
-    def close_session(self):
-        self.sess.close()
+	def close_session(self):
+		self.sess.close()
 
 ''' Main Function '''
 if __name__ == '__main__': 
 
-    chatbot = chatBot()
-    
-    print("CHATBOT READY")
+	chatbot = chatBot()
+	
+	print("CHATBOT READY")
 
-    if FLAGS.train: chatbot.train()
-    else: chatbot.test()
+	if FLAGS.train: chatbot.train()
+	else: chatbot.test()
 
-    chatbot.close_session()
+	chatbot.close_session()

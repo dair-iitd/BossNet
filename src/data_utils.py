@@ -101,7 +101,7 @@ def load_dialog_task(data_dir, task_id, isOOV):
     if isOOV:
         test_file = [f for f in files if s in f and 'tst-OOV' in f][0]
     else: 
-        test_file = [f for f in files if s in f and 'tst.' in f][0]
+        test_file = [f for f in files if s in f and 'tst' in f][0]
     val_file = [f for f in files if s in f and 'dev' in f][0]
     train_data = get_dialogs(train_file)
     test_data = get_dialogs(test_file)
@@ -226,22 +226,24 @@ def get_surface_form(index_list, word_map):
     return surface_form
 
 def substring_accuracy_score(preds, vals, word_map=None, isTrain=True):
+    total_sub_score = 0.0
     total_score = 0.0
     for pred, val in zip(preds, vals):
         reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
         hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
-        #if is_Sublist(reference, hypothesis) == True:
+        if is_Sublist(reference, hypothesis) == True:
+            total_sub_score += 1.0 
         if reference==hypothesis:
             total_score += 1.0
         else:
-            # Jan 6 : print incorrect results while testing
+            # print incorrect results while testing
             if word_map is not None and isTrain==False:
                 ref_surface = get_surface_form(reference, word_map)
                 hyp_surface = get_surface_form(hypothesis, word_map)
                 print('ground truth   : ' + hyp_surface)
                 print('predictions    : ' + ref_surface)
                 print('-----')
-    return (float(total_score) / len(preds))*100
+    return [(float(total_sub_score) / len(preds))*100, (float(total_score) / len(preds))*100]
 
 def bleu_accuracy_score(preds, vals, word_map=None, isTrain=True):
     total_score = 0.0
@@ -259,7 +261,7 @@ def new_eval_score(preds, vals, dbset, word_map=None):
     for pred, val, db_rest in zip(preds, vals, dbset):
         answer = [word_map[x] if x in word_map else 'UNK' for x in val if x != EOS_INDEX and x != PAD_INDEX]
 
-        if ['what', 'do', 'you', 'think', 'of', 'this', 'option', ':'] in answer:
+        if ':' in answer:
             total += 1
             ans_pred = val[8]
             pred_rest = pred[8]

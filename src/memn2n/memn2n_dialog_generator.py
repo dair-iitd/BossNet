@@ -70,7 +70,8 @@ class MemN2NGeneratorDialog(object):
 				 char_emb=False,
 				 reduce_states=False,
 				 char_emb_size=256,
-				 p_gen_loss=False):
+				 p_gen_loss=False,
+				 gated=False):
 
 		"""Creates an End-To-End Memory Network
 
@@ -128,6 +129,7 @@ class MemN2NGeneratorDialog(object):
 		self._reduce_states = reduce_states
 		self._token_emb_size = char_emb_size
 		self._p_gen_loss = p_gen_loss
+		self._gated = gated
 		
 		# add unk and eos
 		self.UNK = decoder_vocab_to_index["UNK"]
@@ -216,6 +218,13 @@ class MemN2NGeneratorDialog(object):
 			with tf.variable_scope('decoder'):
 				self.decoder_cell = tf.contrib.rnn.GRUCell(self._embedding_size)
 				self.projection_layer = layers_core.Dense(self._decoder_vocab_size, use_bias=False)
+
+			if self._gated:
+				self.W_HS = []
+				self.b_HS = []
+				for hop_index in range(self._hops):
+					self.W_HS.append(tf.Variable(self._init([self._embedding_size, self._embedding_size]), name="W_HS"))
+					self.b_HS.append(tf.Variable(self._init([self._embedding_size]), name="b_HS"))
 
 			if self._reduce_states:
 				with tf.variable_scope("encoder"):
@@ -376,8 +385,13 @@ class MemN2NGeneratorDialog(object):
 				probs_temp = tf.transpose(tf.expand_dims(probs, -1), [0, 2, 1])
 				c_temp = tf.transpose(line_memory, [0, 2, 1])
 				o_k = tf.reduce_sum(c_temp * probs_temp, 2)
-
-				u_k = tf.matmul(u[-1], self.H) + o_k
+				
+				if self._gated:
+					# t_k : batch_size x embedding_size
+					t_k = tf.sigmoid(  tf.add( tf.matmul(u[-1],self.W_HS[hop_index]) , self.b_HS[hop_index]) )
+					u_k = tf.multiply( tf.matmul(u[-1], self.H) , t_k ) + tf.multiply( o_k , tf.subtract(tf.ones_like(t_k),t_k) )
+				else:
+					u_k = tf.matmul(u[-1], self.H) + o_k
 
 				# nonlinearity
 				if self._nonlin:
