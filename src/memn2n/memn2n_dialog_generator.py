@@ -64,8 +64,7 @@ class MemN2NGeneratorDialog(object):
 				 session=tf.Session(),
 				 name='MemN2N',
 				 task_id=1,
-				 use_beam_search=False,
-				 use_attention=False,
+				 pointer=False,
 				 dropout=False,
 				 char_emb=False,
 				 reduce_states=False,
@@ -121,9 +120,7 @@ class MemN2NGeneratorDialog(object):
 		self._opt = optimizer
 		self._name = name
 		self._candidate_sentence_size = candidate_sentence_size
-		self._beam_width = 10
-		self._use_beam_search = use_beam_search
-		self._use_attention = use_attention
+		self._pointer = pointer
 		self._dropout = dropout
 		self._char_emb = char_emb
 		self._reduce_states = reduce_states
@@ -147,13 +144,18 @@ class MemN2NGeneratorDialog(object):
 		self.root_dir = "%s_%s_%s_%s/" % ('task',
 										  str(task_id), 'summary_output', timestamp)
 
-		encoder_states, line_memory, word_memory, attn_arr = self._encoder(self._stories, self._queries)
-			
+		if self._pointer:
+			encoder_states, line_memory, word_memory, attn_arr = self._encoder(self._stories, self._queries)
+		else:
+			encoder_states, line_memory, attn_arr = self._encoder(self._stories, self._queries)
+		
 		# train_op 
-		loss_op, logits = self._decoder_train(encoder_states, line_memory, word_memory)
-		
+		if self._pointer:
+			loss_op, logits = self._decoder_train(encoder_states, line_memory, word_memory)
+		else:
+			loss_op, logits = self._decoder_train(encoder_states, line_memory)
+
 		# gradient pipeline
-		
 		grads_and_vars = self._opt.compute_gradients(loss_op)
 		grads_and_vars = [(tf.clip_by_norm(g, self._max_grad_norm), v) for g, v in grads_and_vars if g != None]
 		nil_grads_and_vars = []
@@ -165,8 +167,11 @@ class MemN2NGeneratorDialog(object):
 		train_op = self._opt.apply_gradients(nil_grads_and_vars, name="train_op")
 
 		# predict ops
-		predict_op = self._decoder_runtime(encoder_states, line_memory, word_memory)
-		
+		if self._pointer:
+			predict_op = self._decoder_runtime(encoder_states, line_memory, word_memory)
+		else:
+			predict_op = self._decoder_runtime(encoder_states, line_memory)
+
 		# assign ops
 		self.loss_op = loss_op, logits
 		self.predict_op = predict_op
@@ -357,19 +362,22 @@ class MemN2NGeneratorDialog(object):
 			with tf.variable_scope("encoder", reuse=True):
 				(outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, memory_emb, sequence_length=sentence_sizes, dtype=tf.float32)
 			(f_state, b_state) = output_states
-			(f_states, b_states) = outputs
 			
 			if self._reduce_states:
 				line_memory = self._reduce_states_fn(f_state, b_state)
-				word_memory = self._reduce_states_fn(f_states, b_states)
 			else:
 				line_memory = tf.concat(axis=1, values=[f_state, b_state])
-				word_memory = tf.concat(axis=2, values=[f_states, b_states]) 
-				# word_memory = tf.reshape(word_memory, [-1, self._embedding_size])
-
 			# line_memory : batch_size x memory_size x embedding_size
 			line_memory = tf.reshape(line_memory, [self._batch_size, self._memory_size, self._embedding_size])
-			word_memory = tf.reshape(word_memory, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
+			
+			if self._pointer:
+				(f_states, b_states) = outputs
+				if self._reduce_states:
+					word_memory = self._reduce_states_fn(f_states, b_states)
+				else:
+					word_memory = tf.concat(axis=2, values=[f_states, b_states]) 
+				# word_memory = tf.reshape(word_memory, [-1, self._embedding_size])
+				word_memory = tf.reshape(word_memory, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
 
 			### Implement Hop Network ###
 			attn_arr = []
@@ -399,30 +407,31 @@ class MemN2NGeneratorDialog(object):
 
 				u.append(u_k)
 			
-			return u_k, line_memory, word_memory, attn_arr
+			if self._pointer:
+				return u_k, line_memory, word_memory, attn_arr
+			else:
+				return u_k, line_memory, attn_arr
 
 	def _get_decoder(self, encoder_states, line_memory, word_memory, helper, batch_size):
 		with tf.variable_scope(self._name):
 			with tf.variable_scope('decoder'):
-				if self._use_attention:
-					# make the shape concrete to prevent ValueError caused by (?, ?, ?)
-					reshaped_line_memory = tf.reshape(line_memory,[batch_size, -1, self._embedding_size])
-					# if self._char_emb:
-					# 	reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size * 2])
-					# else:
+				# make the shape concrete to prevent ValueError caused by (?, ?, ?)
+				reshaped_line_memory = tf.reshape(line_memory,[batch_size, -1, self._embedding_size])
+				if self._pointer:
 					reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
 					self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory, char_emb=self._char_emb)
-					decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False, dropout=self._dropout)
-				
-					# added wrapped_encoder_states to overcome https://github.com/tensorflow/tensorflow/issues/11540
+					decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False, dropout=self._dropout)			
 					wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
 					decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
-				else:    
-					decoder = BasicDecoder(self.decoder_cell, helper, encoder_states, output_layer=self.projection_layer)
-
+				else:
+					self.attention_mechanism = tf.contrib.seq2seq.LuongAttention(self._embedding_size, reshaped_line_memory)
+					# self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, char_emb=self._char_emb)
+					decoder_cell_with_attn = tf.contrib.seq2seq.AttentionWrapper(self.decoder_cell, self.attention_mechanism)
+					wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
+					decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
 				return decoder
 
-	def _decoder_train(self, encoder_states, line_memory, word_memory):
+	def _decoder_train(self, encoder_states, line_memory, word_memory=None):
 		
 		# encoder_states = batch_size x embedding_size
 		# answers = batch_size x candidate_sentence_size
@@ -438,17 +447,21 @@ class MemN2NGeneratorDialog(object):
 				
 				answer_sizes = tf.reshape(self._answer_sizes,[-1])
 				helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
-				outputs,_,_,p_gens = dynamic_decode(self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size), self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
+				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
+				if self._pointer:
+					outputs,_,_,p_gens = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
+				else:
+					outputs,_,_ = tf.contrib.seq2seq.dynamic_decode(decoder)
 				final_dists = outputs.rnn_output
 				max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
 				ans = self._answers[:, :max_length]
-				intersect_mask = self._intersection_mask[:, :max_length]
 				
 				target_weights = tf.reshape(self._answer_sizes,[-1])
 				target_weights = tf.sequence_mask(target_weights, self._candidate_sentence_size, dtype=tf.float32)
-				target_weights = target_weights[:, :max_length] 
+				target_weights = target_weights[:, :max_length]
 
-				if self._p_gen_loss:
+				if self._pointer and self._p_gen_loss:
+					intersect_mask = self._intersection_mask[:, :max_length]
 					p_gen_logits = tf.concat([p_gens, (1-p_gens)], 2)
 					p_gen_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=intersect_mask, logits=p_gen_logits)
 					crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
@@ -459,35 +472,29 @@ class MemN2NGeneratorDialog(object):
 
 		return loss, final_dists
 
-	def _decoder_runtime(self, encoder_states, line_memory, word_memory):
+
+	def _decoder_runtime(self, encoder_states, line_memory, word_memory=None):
 		
 		# encoder_states = batch_size x 1
 		# answers = batch_size x candidate_sentence_size
 		with tf.variable_scope(self._name):
 			batch_size = tf.shape(self._stories)[0]
 			with tf.variable_scope('decoder', reuse=True):
+				helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
+				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
 				
-				if self._use_beam_search:
-					decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-						self.decoder_cell,self.C,tf.fill([batch_size], self.GO_SYMBOL),
-						self.EOS, tf.contrib.seq2seq.tile_batch(encoder_states, multiplier=self._beam_width), 
-						self._beam_width, output_layer = self.projection_layer)
+				if self._pointer:
+					outputs,_,_,p_gens = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
 				else:
-					helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
-					decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
-
-				outputs,_,_,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
+					outputs,_,_ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=2*self._candidate_sentence_size)
 				final_dists = outputs.rnn_output
-
-				if self._use_beam_search:
-					predicted_ids = outputs.predicted_ids
-					old_translations = tf.gather(predicted_ids,0,axis=2)
-					new_translations = old_translations
-				else:
-					old_translations = outputs.sample_id
-					new_translations = tf.argmax(final_dists, axis=-1)
 				
-		return old_translations, new_translations
+			if self._pointer:
+				old_translations = outputs.sample_id
+				new_translations = tf.argmax(final_dists, axis=-1)
+				return old_translations, new_translations
+			else:
+				return outputs.sample_id
 
 	def _make_feed_dict(self, batch, train=True):
 		"""Make a feed dictionary mapping parts of the batch to the appropriate placeholders.
@@ -501,9 +508,10 @@ class MemN2NGeneratorDialog(object):
 		feed_dict[self._queries] = batch.queries
 		feed_dict[self._sentence_sizes] = batch.story_sizes
 		feed_dict[self._query_sizes] = batch.query_sizes
-		feed_dict[self._oov_ids] = batch.oov_ids
-		feed_dict[self._oov_sizes] = batch.oov_sizes
-		feed_dict[self._intersection_mask] = batch.intersection_set
+		if self._pointer:
+			feed_dict[self._oov_ids] = batch.oov_ids
+			feed_dict[self._oov_sizes] = batch.oov_sizes
+			feed_dict[self._intersection_mask] = batch.intersection_set
 		if self._char_emb:
 			feed_dict[self._sentence_tokens] = batch.story_tokens
 			feed_dict[self._query_tokens] = batch.query_tokens

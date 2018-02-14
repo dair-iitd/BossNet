@@ -26,8 +26,7 @@ tf.flags.DEFINE_integer("embedding_size", 32, "Embedding size for embedding matr
 tf.flags.DEFINE_integer("memory_size", 50, "Maximum size of memory.")
 tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
-tf.flags.DEFINE_boolean('use_beam_search', False, 'if True, uses beam search for dcoding, else uses greedy decoding')
-tf.flags.DEFINE_boolean('use_attention', False, 'if True, uses attention')
+tf.flags.DEFINE_boolean('pointer', False, 'if True, uses pointer network')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
 tf.flags.DEFINE_boolean('word_drop', False, 'if True, uses random word dropout')
 tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score')
@@ -76,8 +75,7 @@ class chatBot(object):
 		self.hops = FLAGS.hops
 		self.epochs = FLAGS.epochs
 		self.embedding_size = FLAGS.embedding_size
-		self.use_beam_search= FLAGS.use_beam_search
-		self.use_attention = FLAGS.use_attention
+		self.pointer = FLAGS.pointer
 		self.dropout = FLAGS.dropout
 		self.word_drop_flag = FLAGS.word_drop
 		self.unk_size = FLAGS.unk_size
@@ -118,8 +116,8 @@ class chatBot(object):
 		self.model = MemN2NGeneratorDialog(self.batch_size, self.vocab_size, self.sentence_size, 
 										   self.embedding_size, self.decoder_vocab_to_index, self.candidate_sentence_size, 
 										   session=self.sess, hops=self.hops, max_grad_norm=self.max_grad_norm, 
-										   optimizer=self.optimizer, task_id=self.task_id, use_beam_search=self.use_beam_search,
-										   use_attention=self.use_attention, dropout=self.dropout, char_emb=self.char_emb, 
+										   optimizer=self.optimizer, task_id=self.task_id, pointer=self.pointer,
+										   dropout=self.dropout, char_emb=self.char_emb, 
 										   reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss,
 										   gated=self.gated)
 		self.saver = tf.train.Saver(max_to_keep=4)
@@ -180,28 +178,24 @@ class chatBot(object):
 				print('-----------------------')
 				print('Epoch', t)
 				print('Total Cost:', total_cost)
-				print("Training Accuracy  : ", train_accuracies[0][0], train_accuracies[0][1])
-				print("Training Accuracy + Attention : ", train_accuracies[1][0], train_accuracies[1][1])
-				print("Validation Accuracy  : ", val_accuracies[0][0], val_accuracies[0][1])
-				print("Validation Accuracy + Attention : ", val_accuracies[1][0], val_accuracies[1][1])
-				idx1 = 2; idx2 = 3
-				if self.bleu_score:
-					print('Training Bleu Score:', train_accuracies[idx1], train_accuracies[idx2])
-					print('Validation Bleu Score:', val_accuracies[idx1], val_accuracies[idx2])
-					idx1 += 1; idx2 += 1
-				if self.new_eval and (self.task_id==3 or self.task_id==5):
-					print('Restaurant Recommendation Accuracy : ', test_accuracies[idx1][0], test_accuracies[idx2][0])
-					print('Restaurant Recommendation from DB Accuracy : ', test_accuracies[idx1][1], test_accuracies[idx2][1])
+				if self.pointer:
+					print("Train Accuracy (Substring / Actual) : ", train_accuracies[1][0], train_accuracies[1][1])
+					print("Train Accuracy + Attention : ", train_accuracies[0][0], train_accuracies[0][1])
+					print("Validation Accuracy (Substring / Actual) : ", val_accuracies[1][0], val_accuracies[1][1])
+					print("Validation Accuracy + Attention : ", val_accuracies[0][0], val_accuracies[0][1])
+				else:
+					print("Train Accuracy (Substring / Actual) : ", train_accuracies[0][0], train_accuracies[0][1])
+					print("Validation Accuracy (Substring / Actual) : ", val_accuracies[0][0], val_accuracies[0][1])
 				print('-----------------------')
 				sys.stdout.flush()
 				
 				# Save best model
-				if val_accuracies[1] >= best_validation_accuracy:
+				if val_accuracies[0][1] >= best_validation_accuracy:
 					model_count += 1
-					best_validation_accuracy = val_accuracies[1]
+					best_validation_accuracy = val_accuracies[0][1]
 					self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
 
-				if model_count >= 8 and self.word_drop_flag:
+				if model_count >= 10 and self.word_drop_flag:
 					self.word_drop = True
 
 	def test(self):
@@ -227,17 +221,25 @@ class chatBot(object):
 			test_accuracies = self.batch_predict(Data_test, n_test)
 
 			print("Test Size      : ", n_test)
-			print("Test Accuracy  : ", test_accuracies[0][0], test_accuracies[0][1])
-			print("Test Accuracy + Attention : ", test_accuracies[1][0], test_accuracies[1][1])
-			idx1 = 2; idx2 = 3   
-			if self.bleu_score:
-					print('Training Bleu Score:', train_accuracies[idx1], train_accuracies[idx2])
-					print('Validation Bleu Score:', val_accuracies[idx1], val_accuracies[idx2])
-					idx += 1; idx2 += 1
-			if self.new_eval and (self.task_id==3 or self.task_id==5):
-				print('Restaurant Recommendation Accuracy : ', test_accuracies[idx1][0], test_accuracies[idx2][0])
-				print('Restaurant Recommendation from DB Accuracy : ', test_accuracies[idx1][1], test_accuracies[idx2][1])
-			   
+			if self.pointer:
+				print("Test Accuracy (Substring / Actual) : ", test_accuracies[1][0], test_accuracies[1][1])
+				print("Test Accuracy + Attention : ", test_accuracies[0][0], test_accuracies[0][1])
+				idx1 = 2; idx2 = 3   
+				if self.bleu_score:
+					print('Test Bleu Score:', test_accuracies[idx1], test_accuracies[idx2])
+					idx += 2; idx2 += 2
+				if self.new_eval and (self.task_id==3 or self.task_id==5):
+					print('Restaurant Recommendation Accuracy : ', test_accuracies[idx1][0], test_accuracies[idx2][0])
+					print('Restaurant Recommendation from DB Accuracy : ', test_accuracies[idx1][1], test_accuracies[idx2][1])
+			else:
+				print("Test Accuracy (Substring / Actual) : ", test_accuracies[0][0], test_accuracies[0][1])
+				idx = 1
+				if self.bleu_score:
+					print('Test Bleu Score:', test_accuracies[idx])
+					idx += 1
+				if self.new_eval and (self.task_id==3 or self.task_id==5):
+					print('Restaurant Recommendation Accuracy : ', test_accuracies[idx][0])
+					print('Restaurant Recommendation from DB Accuracy : ', test_accuracies[idx][1])
 			print("------------------------")
 
 	def interactive(self):
@@ -258,22 +260,36 @@ class chatBot(object):
 		'''
 			Get Predictions for Input Data batchwise
 		'''
-		old_preds = []
-		new_preds = []
+		if self.pointer:
+			old_preds = []
+			new_preds = []
+		else:
+			preds = []
 		count = 0
 		for start in range(0, n, self.batch_size):
 			end = start + self.batch_size
 			count += 1
 			if count >= n / self.batch_size:
 				break
-			old_pred, new_pred = self.model.predict(Batch(data, start, end))
-			old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
-			new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
-		output = [substring_accuracy_score(old_preds, data.answers), substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
-		if self.bleu_score:
-			output += [bleu_accuracy_score(old_preds, data.answers, word_map=self.decoder_index_to_vocab), bleu_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
-		if self.new_eval and (self.task_id==3 or self.task_id==5):
-			output += [new_eval_score(old_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab), new_eval_score(new_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
+			if self.pointer:
+				old_pred, new_pred = self.model.predict(Batch(data, start, end))
+				old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
+				new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
+			else:
+				pred = self.model.predict(Batch(data, start, end))
+				preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
+		if self.pointer:
+			output = [substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train), substring_accuracy_score(old_preds, data.answers)]
+			if self.bleu_score:
+				output += [bleu_accuracy_score(old_preds, data.answers, word_map=self.decoder_index_to_vocab), bleu_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+			if self.new_eval and (self.task_id==3 or self.task_id==5):
+				output += [new_eval_score(old_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab), new_eval_score(new_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
+		else:
+			output = [substring_accuracy_score(preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+			if self.bleu_score:
+				output += [bleu_accuracy_score(preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+			if self.new_eval and (self.task_id==3 or self.task_id==5):
+				output += [new_eval_score(preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
 		return output
 
 	def close_session(self):
