@@ -322,7 +322,7 @@ def _luong_score(query, keys, scale):
 
   return tf.nn.l2_normalize(score, dim=1, epsilon=1e-12, name=None)
 
-def _luong_word_score(query, word_keys, scale, size, char_emb):
+def _luong_word_score(query, word_keys, scale, size, char_emb, hierarchy):
   """Implements Luong-style (multiplicative) scoring function.
 
   This attention has two forms.  The first is standard Luong attention,
@@ -381,7 +381,10 @@ def _luong_word_score(query, word_keys, scale, size, char_emb):
   scores = tf.transpose(scores, [1, 0, 2])
 
   # scores = tf.transpose(tf.stack(scores), [1, 0, 2, 3])
-  return tf.nn.l2_normalize(scores, dim=2, epsilon=1e-12, name=None)
+  if hierarchy:
+    return tf.nn.l2_normalize(scores, dim=2, epsilon=1e-12, name=None)
+  else:
+    return tf.nn.l2_normalize(scores, dim=[1,2], epsilon=1e-12, name=None)
 
 class CustomAttention(_BaseAttentionMechanism):
   """Implements Luong-style (multiplicative) attention scoring.
@@ -405,6 +408,7 @@ class CustomAttention(_BaseAttentionMechanism):
                line_memory,
                word_memory=None,
                char_emb=False,
+               hierarchy=True,
                line_memory_sequence_length=None,
                word_memory_sequence_length=None,
                scale=False,
@@ -452,6 +456,7 @@ class CustomAttention(_BaseAttentionMechanism):
     self._scale = scale
     self._name = name
     self._char_emb = char_emb
+    self._hierarchy = hierarchy
 
   def __call__(self, query, previous_alignments):
     """Score the query based on the keys and values.
@@ -470,12 +475,15 @@ class CustomAttention(_BaseAttentionMechanism):
     """
     with variable_scope.variable_scope(None, "custom_attention", [query]):
       score = _luong_score(query, self._keys, self._scale)
-      word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size, self._char_emb)
+      word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size, self._char_emb, self._hierarchy)
     alignments = self._probability_fn(score)
-    word_scores = tf.transpose(word_scores, [0,2,1])
-    score = tf.expand_dims(score, 1)
-    word_alignments = math_ops.multiply(word_scores, score)
-    word_alignments = tf.transpose(word_alignments, [0,2,1])
+    if self._hierarchy:
+      word_scores = tf.transpose(word_scores, [0,2,1])
+      score = tf.expand_dims(score, 1)
+      word_alignments = math_ops.multiply(word_scores, score)
+      word_alignments = tf.transpose(word_alignments, [0,2,1])
+    else:
+      word_alignments = word_scores
     return alignments, tf.reshape(word_alignments, [self._batch_size, -1]), self._batch_size, self._embedding_size, self._char_emb
 
 
