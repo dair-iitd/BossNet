@@ -573,10 +573,7 @@ def _compute_attention(attention_mechanism, cell_output, previous_alignments,
   else:
     attention = context
 
-  if char_emb:
-    word_memory = tf.reshape(attention_mechanism.word_values,[batch_size, -1, embedding_size*2])
-  else:
-    word_memory = tf.reshape(attention_mechanism.word_values,[batch_size, -1, embedding_size])
+  word_memory = tf.reshape(attention_mechanism.word_values,[batch_size, -1, embedding_size])
   expanded_alignments = array_ops.expand_dims(word_alignments, 1)
   context = math_ops.matmul(expanded_alignments, word_memory)
   context = array_ops.squeeze(context, [1])
@@ -969,7 +966,7 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
 
       all_alignments.append(alignments)
       all_histories.append(alignment_history)
-      all_attentions.append(attention)
+      all_attentions.append(word_attention)
 
     attention = array_ops.concat(all_attentions, 1)
     next_state = AttentionWrapperState(
