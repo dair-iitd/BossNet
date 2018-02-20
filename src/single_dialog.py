@@ -274,9 +274,28 @@ class chatBot(object):
 			if count >= n / self.batch_size:
 				break
 			if self.pointer:
-				old_pred, new_pred = self.model.predict(Batch(data, start, end))
+				old_pred, new_pred, hier, line, word = self.model.predict(Batch(data, start, end))
 				old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
 				new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
+				# if count == 1:
+				# 	print (count)
+				# 	print (new_pred.shape)
+				# 	print (hier.shape)
+				# 	print (line.shape)
+				# 	print (word.shape)
+				# 	hier = hier.reshape(word.shape)
+				# 	print (hier.shape)
+				# 	lst_hier = hier[1][-1]
+				# 	lst_word = word[1][-1]
+				# 	lst_line = line[1][-1]
+				# 	print (lst_hier)
+				# 	print (lst_word)
+				# 	print (lst_line)
+				# 	print (np.sum(lst_word[0]))
+				# 	print (np.sum(lst_line))
+				# 	print (np.sum(lst_word))
+				# 	print (np.sum(lst_hier))
+				# 	sys.exit()
 			else:
 				pred = self.model.predict(Batch(data, start, end))
 				preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)

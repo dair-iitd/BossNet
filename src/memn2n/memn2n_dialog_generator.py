@@ -421,13 +421,12 @@ class MemN2NGeneratorDialog(object):
 				reshaped_line_memory = tf.reshape(line_memory,[batch_size, -1, self._embedding_size])
 				if self._pointer:
 					reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
-					self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory, char_emb=self._char_emb, hierarchy=self._hierarchy)
+					self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory, hierarchy=self._hierarchy)
 					decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False, dropout=self._dropout)			
 					wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
 					decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
 				else:
 					self.attention_mechanism = tf.contrib.seq2seq.LuongAttention(self._embedding_size, reshaped_line_memory)
-					# self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, char_emb=self._char_emb)
 					decoder_cell_with_attn = tf.contrib.seq2seq.AttentionWrapper(self.decoder_cell, self.attention_mechanism)
 					wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
 					decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
@@ -451,7 +450,7 @@ class MemN2NGeneratorDialog(object):
 				helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
 				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
 				if self._pointer:
-					outputs,_,_,p_gens = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
+					outputs,_,_,p_gens,_,_,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
 				else:
 					outputs,_,_ = tf.contrib.seq2seq.dynamic_decode(decoder)
 				final_dists = outputs.rnn_output
@@ -486,7 +485,7 @@ class MemN2NGeneratorDialog(object):
 				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
 				
 				if self._pointer:
-					outputs,_,_,p_gens = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
+					outputs,_,_, p_gens, hier, line, word = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
 				else:
 					outputs,_,_ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=2*self._candidate_sentence_size)
 				final_dists = outputs.rnn_output
@@ -494,7 +493,7 @@ class MemN2NGeneratorDialog(object):
 			if self._pointer:
 				old_translations = outputs.sample_id
 				new_translations = tf.argmax(final_dists, axis=-1)
-				return old_translations, new_translations
+				return old_translations, new_translations, hier, line, word
 			else:
 				return outputs.sample_id
 

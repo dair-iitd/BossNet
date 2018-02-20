@@ -48,7 +48,6 @@ __all__ = [
     "AttentionMechanism",
     "AttentionWrapper",
     "AttentionWrapperState",
-    "hardmax",
     "CustomAttention"
 ]
 
@@ -245,6 +244,10 @@ class _BaseAttentionMechanism(AttentionMechanism):
     return self._alignments_size
 
   @property
+  def embedding_size(self):
+    return self._embedding_size
+
+  @property
   def word_alignments_size(self):
     return self._word_alignments_size
 
@@ -322,7 +325,7 @@ def _luong_score(query, keys, scale):
 
   return tf.nn.l2_normalize(score, dim=1, epsilon=1e-12, name=None)
 
-def _luong_word_score(query, word_keys, scale, size, char_emb, hierarchy):
+def _luong_word_score(query, word_keys, scale, size, hierarchy):
   """Implements Luong-style (multiplicative) scoring function.
 
   This attention has two forms.  The first is standard Luong attention,
@@ -360,8 +363,6 @@ def _luong_word_score(query, word_keys, scale, size, char_emb, hierarchy):
 
   # Reshape from [batch_size, depth] to [batch_size, 1, depth]
   # for matmul.
-  # if char_emb:
-  #   query = array_ops.concat([query, query], 1)
 
   query = array_ops.expand_dims(query, 1)
 
@@ -375,12 +376,10 @@ def _luong_word_score(query, word_keys, scale, size, char_emb, hierarchy):
   #   [batch_time, 1, max_time].
   # we then squeeze out the center singleton dimension.
   word_keys = tf.transpose(word_keys, [1, 0, 2, 3])
-  # word_keys = tf.unstack(word_keys)
   context_fn = lambda key: array_ops.squeeze(math_ops.matmul(query, key, transpose_b=True), [1])
   scores = tf.map_fn(context_fn, word_keys)
   scores = tf.transpose(scores, [1, 0, 2])
 
-  # scores = tf.transpose(tf.stack(scores), [1, 0, 2, 3])
   if hierarchy:
     return tf.nn.l2_normalize(scores, dim=2, epsilon=1e-12, name=None)
   else:
@@ -407,7 +406,6 @@ class CustomAttention(_BaseAttentionMechanism):
                num_units,
                line_memory,
                word_memory=None,
-               char_emb=False,
                hierarchy=True,
                line_memory_sequence_length=None,
                word_memory_sequence_length=None,
@@ -455,7 +453,6 @@ class CustomAttention(_BaseAttentionMechanism):
     self._num_units = num_units
     self._scale = scale
     self._name = name
-    self._char_emb = char_emb
     self._hierarchy = hierarchy
 
   def __call__(self, query, previous_alignments):
@@ -474,17 +471,23 @@ class CustomAttention(_BaseAttentionMechanism):
         `max_time`).
     """
     with variable_scope.variable_scope(None, "custom_attention", [query]):
-      score = _luong_score(query, self._keys, self._scale)
-      word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size, self._char_emb, self._hierarchy)
-    alignments = self._probability_fn(score)
+      line_scores = _luong_score(query, self._keys, self._scale)
+      word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size, self._hierarchy)
+    line_alignments = self._probability_fn(line_scores)
+    word_alignments = self._probability_fn(word_scores)
     if self._hierarchy:
-      word_scores = tf.transpose(word_scores, [0,2,1])
-      score = tf.expand_dims(score, 1)
-      word_alignments = math_ops.multiply(word_scores, score)
-      word_alignments = tf.transpose(word_alignments, [0,2,1])
+      temp_word_alignments = tf.transpose(word_alignments, [0,2,1])
+      temp_line_alignments = tf.expand_dims(line_alignments, 1)
+      hier_alignments = math_ops.multiply(temp_word_alignments, temp_line_alignments)
+      hier_alignments = tf.transpose(hier_alignments, [0,2,1])
     else:
-      word_alignments = word_scores
-    return alignments, tf.reshape(word_alignments, [self._batch_size, -1]), self._batch_size, self._embedding_size, self._char_emb
+      shape = word_scores.get_shape().as_list()[-1]
+      word_scores = tf.reshape(word_scores, [self._batch_size, -1])
+      word_alignments = self._probability_fn(word_scores)
+      word_alignments = tf.reshape(word_alignments, tf.stack([self._batch_size, -1, shape]))
+      hier_alignments = word_alignments
+    hier_alignments = tf.reshape(hier_alignments, [self._batch_size, -1])
+    return line_alignments, word_alignments, hier_alignments
 
 
 class AttentionWrapperState(
@@ -526,36 +529,13 @@ class AttentionWrapperState(
     """
     return super(AttentionWrapperState, self)._replace(**kwargs)
 
-
-def hardmax(logits, name=None):
-  """Returns batched one-hot vectors.
-
-  The depth index containing the `1` is that of the maximum logit value.
-
-  Args:
-    logits: A batch tensor of logit values.
-    name: Name to use when creating ops.
-  Returns:
-    A batched one-hot tensor.
-  """
-  with ops.name_scope(name, "Hardmax", [logits]):
-    logits = ops.convert_to_tensor(logits, name="logits")
-    if logits.get_shape()[-1].value is not None:
-      depth = logits.get_shape()[-1].value
-    else:
-      depth = array_ops.shape(logits)[-1]
-    return array_ops.one_hot(
-        math_ops.argmax(logits, -1), depth, dtype=logits.dtype)
-
-
 def _compute_attention(attention_mechanism, cell_output, previous_alignments,
                        attention_layer):
   """Computes the attention and alignments for a given attention_mechanism."""
-  alignments, word_alignments, batch_size, embedding_size, char_emb = attention_mechanism(
-      cell_output, previous_alignments=previous_alignments)
+  line_alignments, word_alignments, hier_alignments = attention_mechanism(
+                                  cell_output, previous_alignments=previous_alignments)
 
   # Reshape from [batch_size, memory_time] to [batch_size, 1, memory_time]
-  expanded_alignments = array_ops.expand_dims(alignments, 1)
   # Context is the inner product of alignments and values along the
   # memory time dimension.
   # alignments shape is
@@ -565,23 +545,11 @@ def _compute_attention(attention_mechanism, cell_output, previous_alignments,
   # the batched matmul is over memory_time, so the output shape is
   #   [batch_size, 1, memory_size].
   # we then squeeze out the singleton dim.
-  context = math_ops.matmul(expanded_alignments, attention_mechanism.values)
-  context = array_ops.squeeze(context, [1])
+  expanded_line_alignments = array_ops.expand_dims(line_alignments, 1)
+  line_context = math_ops.matmul(expanded_line_alignments, attention_mechanism.values)
+  line_attention = array_ops.squeeze(line_context, [1])
 
-  if attention_layer is not None:
-    attention = attention_layer(array_ops.concat([cell_output, context], 1))
-  else:
-    attention = context
-
-  word_memory = tf.reshape(attention_mechanism.word_values,[batch_size, -1, embedding_size])
-  expanded_alignments = array_ops.expand_dims(word_alignments, 1)
-  context = math_ops.matmul(expanded_alignments, word_memory)
-  context = array_ops.squeeze(context, [1])
-  if attention_layer is not None:
-    word_attention = attention_layer(array_ops.concat([cell_output, context], 1))
-  else:
-    word_attention = context
-  return attention, word_attention, word_alignments
+  return line_attention, line_alignments, word_alignments, hier_alignments
 
 def linear(args, output_size, bias, bias_start=0.0, scope=None):
   """Linear map: sum_i(args[i] * W[i]), where W[i] is a variable.
@@ -957,16 +925,16 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
     all_alignments = []
     all_attentions = []
     all_histories = []
-    for i, attention_mechanism in enumerate(self._attention_mechanisms):
-      attention, word_attention, alignments = _compute_attention(
+    for i, attention_mechanism in enumerate(self._attention_mechanisms):      
+      line_attention, line_alignments, word_alignments, hier_alignments = _compute_attention(
           attention_mechanism, cell_output, previous_alignments[i],
           self._attention_layers[i] if self._attention_layers else None)
       alignment_history = previous_alignment_history[i].write(
           state.time, alignments) if self._alignment_history else ()
 
-      all_alignments.append(alignments)
+      all_alignments.append(hier_alignments)
       all_histories.append(alignment_history)
-      all_attentions.append(word_attention)
+      all_attentions.append(line_attention)
 
     attention = array_ops.concat(all_attentions, 1)
     next_state = AttentionWrapperState(
@@ -984,4 +952,4 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
     if self._output_attention:
       return attention, next_state
     else:
-      return (cell_output, self._item_or_tuple(all_alignments), p_gens), next_state
+      return (cell_output, line_alignments, word_alignments, hier_alignments, p_gens), next_state
