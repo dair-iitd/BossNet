@@ -23,26 +23,28 @@ tf.flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
 tf.flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
 tf.flags.DEFINE_integer("epochs", 400, "Number of epochs to train for.")
 tf.flags.DEFINE_integer("embedding_size", 32, "Embedding size for embedding matrices.")
-tf.flags.DEFINE_integer("memory_size", 50, "Maximum size of memory.")
+tf.flags.DEFINE_integer("memory_size", 100, "Maximum size of memory.")
 tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
-tf.flags.DEFINE_boolean('pointer', False, 'if True, uses pointer network')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
 tf.flags.DEFINE_boolean('word_drop', False, 'if True, uses random word dropout')
-tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score')
-tf.flags.DEFINE_boolean("new_eval", True, 'if True, uses new evaluation score')
-tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
 tf.flags.DEFINE_boolean("char_emb_overlap", True, 'if False, no overlap of word character tokens during embeddings')
 tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size of encoder states')
 tf.flags.DEFINE_boolean("p_gen_loss", False, 'if True, uses additional p_gen loss during training')
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
-tf.flags.DEFINE_boolean("gated", False, "if True, uses gated memory network")
-tf.flags.DEFINE_boolean("hierarchy", True, "if True, uses hierarchy pointer attention")
 
-# Output Specifications
-tf.flags.DEFINE_boolean('game', False, 'if True, show infinite game results')
+# Model Type
+tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
+tf.flags.DEFINE_boolean('pointer', False, 'if True, uses pointer network')
+tf.flags.DEFINE_boolean("hierarchy", True, "if True, uses hierarchy pointer attention")
+tf.flags.DEFINE_boolean("gated", False, "if True, uses gated memory network")
+
+# Output and Evaluation Specifications
 tf.flags.DEFINE_integer("evaluation_interval", 2, "Evaluate and print results every x epochs")
+tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score')
+tf.flags.DEFINE_boolean("new_eval", True, 'if True, uses new evaluation score')
+tf.flags.DEFINE_boolean("visualize", False, "if True, uses visualize_attention tool")
 
 # Task Type
 tf.flags.DEFINE_boolean('train', False, 'if True, begin to train')
@@ -90,6 +92,7 @@ class chatBot(object):
 		self.new_eval = FLAGS.new_eval
 		self.gated = FLAGS.gated
 		self.hierarchy = FLAGS.hierarchy
+		self.visualize = FLAGS.visualize
 
 		# Create Model Store Directory
 		if not os.path.exists(self.model_dir):
@@ -126,7 +129,7 @@ class chatBot(object):
 
 	def build_vocab(self, data):
 		'''
-			Get vocabulary from the data (Train + Validation + Test)
+			Get vocabulary from the Train data
 		'''
 		vocab = reduce(lambda x, y: x | y, (set(list(chain.from_iterable(s)) + q) for s, q, a, start in data))
 		vocab = sorted(vocab)
@@ -192,9 +195,9 @@ class chatBot(object):
 				sys.stdout.flush()
 				
 				# Save best model
-				if val_accuracies[0][1] >= best_validation_accuracy:
+				if val_accuracies[0][0] >= best_validation_accuracy:
 					model_count += 1
-					best_validation_accuracy = val_accuracies[0][1]
+					best_validation_accuracy = val_accuracies[0][0]
 					self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
 
 				if model_count >= 10 and self.word_drop_flag:
@@ -271,34 +274,19 @@ class chatBot(object):
 		for start in range(0, n, self.batch_size):
 			end = start + self.batch_size
 			count += 1
+			data_batch = Batch(data, start, end)
 			if count >= n / self.batch_size:
 				break
 			if self.pointer:
-				old_pred, new_pred, hier, line, word = self.model.predict(Batch(data, start, end))
+				old_pred, new_pred, hier, line, word, p_gens = self.model.predict(data_batch)
 				old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
 				new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
-				# if count == 1:
-				# 	print (count)
-				# 	print (new_pred.shape)
-				# 	print (hier.shape)
-				# 	print (line.shape)
-				# 	print (word.shape)
-				# 	hier = hier.reshape(word.shape)
-				# 	print (hier.shape)
-				# 	lst_hier = hier[1][-1]
-				# 	lst_word = word[1][-1]
-				# 	lst_line = line[1][-1]
-				# 	print (lst_hier)
-				# 	print (lst_word)
-				# 	print (lst_line)
-				# 	print (np.sum(lst_word[0]))
-				# 	print (np.sum(lst_line))
-				# 	print (np.sum(lst_word))
-				# 	print (np.sum(lst_hier))
-				# 	sys.exit()
+				if self.visualize and count == 31:
+					visualize_attention(data_batch, hier, line, word, p_gens, count, self.hierarchy)
 			else:
-				pred = self.model.predict(Batch(data, start, end))
+				pred = self.model.predict(data_batch)
 				preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
+		sys.exit()
 		if self.pointer:
 			output = [substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train), substring_accuracy_score(old_preds, data.answers)]
 			if self.bleu_score:

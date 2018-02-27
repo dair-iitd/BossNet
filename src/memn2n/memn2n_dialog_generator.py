@@ -493,7 +493,7 @@ class MemN2NGeneratorDialog(object):
 			if self._pointer:
 				old_translations = outputs.sample_id
 				new_translations = tf.argmax(final_dists, axis=-1)
-				return old_translations, new_translations, hier, line, word
+				return old_translations, new_translations, hier, line, word, p_gens
 			else:
 				return outputs.sample_id
 

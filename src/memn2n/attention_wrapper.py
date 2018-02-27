@@ -476,8 +476,10 @@ class CustomAttention(_BaseAttentionMechanism):
     line_alignments = self._probability_fn(line_scores)
     word_alignments = self._probability_fn(word_scores)
     if self._hierarchy:
-      temp_word_alignments = tf.transpose(word_alignments, [0,2,1])
-      temp_line_alignments = tf.expand_dims(line_alignments, 1)
+      # temp_word_alignments = tf.transpose(word_alignments, [0,2,1])
+      # temp_line_alignments = tf.expand_dims(line_alignments, 1)
+      temp_word_alignments = tf.transpose(word_scores, [0,2,1])
+      temp_line_alignments = tf.expand_dims(line_scores, 1)
       hier_alignments = math_ops.multiply(temp_word_alignments, temp_line_alignments)
       hier_alignments = tf.transpose(hier_alignments, [0,2,1])
     else:

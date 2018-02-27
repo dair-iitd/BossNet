@@ -230,8 +230,8 @@ class Data(object):
                 word_tokens = [self._tokenize(w, char_emb_length, char_overlap) for w in sentence] + [[]] * ls
                 tokens.append(word_tokens)
                 word_sizes.append([len(w) for w in word_tokens])
-                story_element = ' '.join([str(x) for x in sentence[:-2]])
-                story_string.append(' '.join([str(x) for x in sentence[-2:]]) + ' : ' + story_element)
+                story_element = [str(x) for x in sentence] + [''] * ls
+                story_string.append(story_element)
 
                 oov_sentence_ids = []
                 for w in sentence:
@@ -253,6 +253,7 @@ class Data(object):
             sizes = sizes[::-1][:memory_size][::-1]
             tokens = tokens[::-1][:memory_size][::-1]
             word_sizes = word_sizes[::-1][:memory_size][::-1]
+            story_string = story_string[::-1][:memory_size][::-1]
 
             # pad to memory_size
             lm = max(0, memory_size - len(ss))
@@ -262,12 +263,13 @@ class Data(object):
                 sizes.append(0)
                 word_sizes.append([0] * sentence_size)
                 tokens.append([[]] * sentence_size)
+                story_string.append([''] * sentence_size)
 
             S.append(np.array(ss))
             SZ.append(np.array(sizes))
             Word_tokens.append(tokens)
             SWZ.append(np.array(word_sizes))
-            S_in_readable_form.append(story_string)
+            S_in_readable_form.append(np.array(story_string))
             OOV_ids.append(np.array(oov_ids))
             OOV_size.append(np.array(len(oov_words)))
             OOV_words.append(np.array(oov_words))

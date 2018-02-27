@@ -6,6 +6,9 @@ import numpy as np
 import tensorflow as tf
 from nltk.translate.bleu_score import corpus_bleu
 from string import punctuation
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib import gridspec
 
 __all__ =  ["load_candidates", 
             "get_decoder_vocab", 
@@ -14,7 +17,8 @@ __all__ =  ["load_candidates",
             "pad_to_answer_size", 
             "substring_accuracy_score",
             "bleu_accuracy_score",
-            "new_eval_score"]
+            "new_eval_score",
+            "visualize_attention"]
 
 ###################################################################################################
 #########                                  Global Variables                              ##########
@@ -273,7 +277,69 @@ def new_eval_score(preds, vals, dbset, word_map=None):
     return [100.0*match_acc/total, 100.0*match/total]
 
 
+###################################################################################################
+#########                                Visualization Tools                             ##########
+###################################################################################################
 
+def visualize_attention(data_batch, hier, line, word, p_gens, count, hierarchy):
+    hier = hier.reshape(word.shape)
+    answers = data_batch.readable_answers
+    for i, ans in enumerate(answers):
+        if ':' in ans:
+            lst_hier = hier[i][8]
+            lst_word = word[i][8]
+            lst_line = line[i][8]
+            lst_pgen = p_gens[i][8]
+            lst_line = lst_line.reshape((lst_line.shape[0], 1))
+            words = np.copy(data_batch.readable_stories[i])
+            sizes = data_batch.story_sizes[i]
+            index = 0
+            for j, size in enumerate(sizes):
+                words[j][size-2] = ''
+                lst_hier[j][size-2:] = 0.0
+                words[j][size-1] = ''
+                for k in range(0, size-2):
+                    if 'resto' in words[j][k]:
+                        elements = [sword[:2] for sword in words[j][k].split('_')]
+                        if len(elements) == 5:
+                            words[j][k] = 'rest_' + elements[4][0] + '_str'
+                        else:
+                            words[j][k] = 'rest_' + elements[4][0] + '_' + elements[5]
+                        if k == 0:
+                            index = j
+            indexes = list(range(0, lst_hier.shape[0]))
+            n_indexes = indexes[:index+1] + indexes[-5:]
+            lst_hier = lst_hier[n_indexes]
+            lst_line = lst_line[n_indexes]
+            words = words[n_indexes]
+            sizes = sizes[n_indexes]
+            size = np.max(sizes)
+            minval = np.min(lst_hier[:, :size-2][np.nonzero(lst_hier[:, :size-2])])
+            maxval = np.max(lst_hier[:, :size-2][np.nonzero(lst_hier[:, :size-2])])
+            
+            # Create Seaborn Attention Graph
+            plt.clf()
+            plt.figure(figsize = (12,7))
+            gs = gridspec.GridSpec(1, 2, width_ratios=[1, 7])
+            
+            plt.subplot(gs[0])
+            sns.set_context("paper")
+            lmaxval = np.max(lst_line)
+            if hierarchy:
+                ax = sns.heatmap(lst_line, fmt='f', linewidths=2, cmap='hot', cbar=False, xticklabels=False, yticklabels=False, vmax=lmaxval*1.1)
+            else:
+                ax = sns.heatmap(lst_line, fmt='f', linewidths=2, cmap='hot',cbar=False, xticklabels=False, yticklabels=False, mask=(lst_line!=0.0), vmax=lmaxval*1.1)
+
+            plt.subplot(gs[1])
+            sns.set_context("paper")
+            print('shape', lst_hier[:, :size-2].shape)
+            ax = sns.heatmap(lst_hier[:, :size-2], fmt='s', linewidths=2, cmap='hot', annot=words[:, :size-2], mask=(lst_hier[:, :size-2]==0.0), vmin=minval, vmax=maxval*1.1, yticklabels=False, xticklabels=False)
+            plt.tight_layout()
+            
+            if hierarchy:
+                plt.savefig('hier_plots/' + str(count) + '_' + str(i) + '_' + str(8) + '_' + str(lst_pgen) + '_' + "att.png")
+            else:
+                plt.savefig('no_hier_plots/' + str(count) + '_' + str(i) + '_' + str(8) + '_' + str(lst_pgen) + '_' + "att.png")
 
 
 
