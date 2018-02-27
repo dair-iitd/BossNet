@@ -39,6 +39,7 @@ tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
 tf.flags.DEFINE_boolean('pointer', False, 'if True, uses pointer network')
 tf.flags.DEFINE_boolean("hierarchy", True, "if True, uses hierarchy pointer attention")
 tf.flags.DEFINE_boolean("gated", False, "if True, uses gated memory network")
+tf.flags.DEFINE_boolean("rnn", False, "if True, uses bi-directional-rnn to encode, else Bag of Words")
 
 # Output and Evaluation Specifications
 tf.flags.DEFINE_integer("evaluation_interval", 2, "Evaluate and print results every x epochs")
@@ -93,6 +94,7 @@ class chatBot(object):
 		self.gated = FLAGS.gated
 		self.hierarchy = FLAGS.hierarchy
 		self.visualize = FLAGS.visualize
+		self.rnn = FLAGS.rnn
 
 		# Create Model Store Directory
 		if not os.path.exists(self.model_dir):
@@ -122,7 +124,7 @@ class chatBot(object):
 										   self.embedding_size, self.decoder_vocab_to_index, self.candidate_sentence_size, 
 										   session=self.sess, hops=self.hops, max_grad_norm=self.max_grad_norm, 
 										   optimizer=self.optimizer, task_id=self.task_id, pointer=self.pointer,
-										   dropout=self.dropout, char_emb=self.char_emb, 
+										   dropout=self.dropout, char_emb=self.char_emb, rnn=self.rnn,
 										   reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss,
 										   gated=self.gated, hierarchy=self.hierarchy)
 		self.saver = tf.train.Saver(max_to_keep=4)

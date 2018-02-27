@@ -67,6 +67,7 @@ class MemN2NGeneratorDialog(object):
 				 pointer=False,
 				 dropout=False,
 				 char_emb=False,
+				 rnn=False,
 				 reduce_states=False,
 				 char_emb_size=256,
 				 p_gen_loss=False,
@@ -129,6 +130,7 @@ class MemN2NGeneratorDialog(object):
 		self._p_gen_loss = p_gen_loss
 		self._gated = gated
 		self._hierarchy = hierarchy
+		self._rnn = rnn
 		
 		# add unk and eos
 		self.UNK = decoder_vocab_to_index["UNK"]
@@ -268,6 +270,11 @@ class MemN2NGeneratorDialog(object):
 						self.char_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
 						self.char_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
 
+			with tf.variable_scope('reduce_bow'):
+				# Define weights and biases to reduce the cell and reduce the state
+				self.w_reduce_bow = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce_bow")
+				self.bias_reduce_bow = tf.Variable(self._init([self._embedding_size]), name="bias_reduce_bow")
+
 		self._nil_vars = set([self.A.name])
 
 	def _reduce_states_fn(self, fw_st, bw_st):
@@ -294,6 +301,15 @@ class MemN2NGeneratorDialog(object):
 			old_c = tf.concat(axis=1, values=[fw_st, bw_st]) # Concatenation of fw and bw cell
 			new_c = tf.nn.relu(tf.matmul(old_c, self.w_reduce_char) + self.bias_reduce_char) # Get new cell from old cell
 			return new_c # Return new cell state
+
+	def _reduce_to_bow(self, emb):
+		with tf.variable_scope('reduce_bow'):
+
+			# Apply linear layer
+			old_c = tf.reshape(emb, [-1, self._embedding_size * 2])
+			new_c = tf.nn.relu(tf.matmul(old_c, self.w_reduce_bow) + self.bias_reduce_bow) # Get new cell from old cell
+			return new_c # Return new cell state
+
 
 	def _encoder(self, stories, queries):
 		with tf.variable_scope(self._name):
@@ -325,18 +341,24 @@ class MemN2NGeneratorDialog(object):
 				# query_emb : batch_size x sentence_size x embedding_size
 				query_emb = query_word_emb
 
-			query_sizes = tf.reshape(self._query_sizes, [-1])
-			with tf.variable_scope("encoder"):
-				(outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, query_emb, sequence_length=query_sizes, dtype=tf.float32)
-			(f_state, b_state) = output_states
+			if self._rnn:
+				query_sizes = tf.reshape(self._query_sizes, [-1])
+				with tf.variable_scope("encoder"):
+					(outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, query_emb, sequence_length=query_sizes, dtype=tf.float32)
+				(f_state, b_state) = output_states
 
-			# u_0 : batch_size x embedding_size
-			if self._reduce_states:
-				u_0 = self._reduce_states_fn(f_state, b_state)
+				# u_0 : batch_size x embedding_size
+				if self._reduce_states:
+					u_0 = self._reduce_states_fn(f_state, b_state)
+				else:
+					u_0 = tf.concat(axis=1, values=[f_state, b_state])
 			else:
-				u_0 = tf.concat(axis=1, values=[f_state, b_state])
+				if self._char_emb:
+					query_emb = self._reduce_to_bow(query_emb)
+					query_emb = tf.reshape(query_emb, [self._batch_size, self._sentence_size, self._embedding_size])
+				u_0 = tf.reduce_sum(query_emb, 1)
 			u = [u_0]
-
+			
 			### Transform Stories ###
 			# stories : batch_size x memory_size x sentence_size
 			# memory_word_emb : batch_size x memory_size x sentence_size x embedding_size
@@ -360,26 +382,35 @@ class MemN2NGeneratorDialog(object):
 			else:
 				memory_emb = tf.reshape(memory_word_emb, [-1, self._sentence_size, self._embedding_size])
 
-			sentence_sizes = tf.reshape(self._sentence_sizes, [-1])
-			with tf.variable_scope("encoder", reuse=True):
-				(outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, memory_emb, sequence_length=sentence_sizes, dtype=tf.float32)
-			(f_state, b_state) = output_states
-			
-			if self._reduce_states:
-				line_memory = self._reduce_states_fn(f_state, b_state)
+			if self._rnn:
+				sentence_sizes = tf.reshape(self._sentence_sizes, [-1])
+				with tf.variable_scope("encoder", reuse=True):
+					(outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, memory_emb, sequence_length=sentence_sizes, dtype=tf.float32)
+				(f_state, b_state) = output_states
+				
+				if self._reduce_states:
+					line_memory = self._reduce_states_fn(f_state, b_state)
+				else:
+					line_memory = tf.concat(axis=1, values=[f_state, b_state])
+				# line_memory : batch_size x memory_size x embedding_size
+				line_memory = tf.reshape(line_memory, [self._batch_size, self._memory_size, self._embedding_size])
 			else:
-				line_memory = tf.concat(axis=1, values=[f_state, b_state])
-			# line_memory : batch_size x memory_size x embedding_size
-			line_memory = tf.reshape(line_memory, [self._batch_size, self._memory_size, self._embedding_size])
+				if self._char_emb:
+					memory_emb = self._reduce_to_bow(memory_emb)
+				memory_emb = tf.reshape(memory_emb, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
+				line_memory = tf.reduce_sum(memory_emb, 2)
+			
 			
 			if self._pointer:
-				(f_states, b_states) = outputs
-				if self._reduce_states:
-					word_memory = self._reduce_states_fn(f_states, b_states)
+				if self._rnn:
+					(f_states, b_states) = outputs
+					if self._reduce_states:
+						word_memory = self._reduce_states_fn(f_states, b_states)
+					else:
+						word_memory = tf.concat(axis=2, values=[f_states, b_states]) 
+					word_memory = tf.reshape(word_memory, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
 				else:
-					word_memory = tf.concat(axis=2, values=[f_states, b_states]) 
-				# word_memory = tf.reshape(word_memory, [-1, self._embedding_size])
-				word_memory = tf.reshape(word_memory, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
+					word_memory = memory_emb
 
 			### Implement Hop Network ###
 			attn_arr = []
