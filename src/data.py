@@ -402,8 +402,8 @@ class Batch(Data):
         # Jan 6 : added answers with UNKs
         self._answers_emb_lookup = data.answers_emb_lookup[start:end]
 
-        if word_drop:
-            self._stories, self._queries = self._random_unk(self._stories, self._queries, self._answers, data.decode_to_encode_db_vocab_map)
+        #if word_drop:
+        #    self._stories, self._queries = self._random_unk(self._stories, self._queries, self._answers, data.decode_to_encode_db_vocab_map)
 
         self._story_sizes = data.story_sizes[start:end]
 
@@ -451,7 +451,6 @@ class Batch(Data):
                 sampled_words = []
             else:
                 sampled_words = list(db_output_vocab)
-                print sampled_words
             for element in sampled_words:
                 story[story == element] = UNK_INDEX
                 query[query == element] = UNK_INDEX

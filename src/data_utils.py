@@ -104,8 +104,10 @@ def load_dialog_task(data_dir, task_id, isOOV):
     train_file = [f for f in files if s in f and 'trn' in f][0]
     if isOOV:
         test_file = [f for f in files if s in f and 'tst-OOV' in f][0]
-    else: 
-        test_file = [f for f in files if s in f and 'tst' in f][0]
+    else:
+        # the cluster sometimes picks the OOV file instead of on-OOV file
+        # added the -n to fix the issue
+        test_file = [f for f in files if s in f and 'tst-n' in f][0]
     val_file = [f for f in files if s in f and 'dev' in f][0]
     train_data = get_dialogs(train_file)
     test_data = get_dialogs(test_file)

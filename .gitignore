@@ -107,7 +107,7 @@ ENV/
 *.out
 *.log
 *.txt
-ccc*.sh
+*ccc.sh
 model.ckpt-*
 checkpoint
 stats/
