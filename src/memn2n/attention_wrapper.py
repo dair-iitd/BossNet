@@ -950,7 +950,7 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
       p_gens = tf.nn.dropout(tf.sigmoid(linear([cell_state, cell_inputs], 1, True)), self._keep_prob)
     else:
       p_gens = tf.sigmoid(linear([cell_state, cell_inputs], 1, True))
-    
+
     if self._output_attention:
       return attention, next_state
     else:
