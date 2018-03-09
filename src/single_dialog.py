@@ -33,6 +33,8 @@ tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size
 tf.flags.DEFINE_boolean("p_gen_loss", False, 'if True, uses additional p_gen loss during training')
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
+tf.flags.DEFINE_boolean('lba', False, 'if True, uses location based addressing')
+tf.flags.DEFINE_integer("shift_size", 2, "Amount of shift allowed for Location Based Addressing")
 
 # Model Type
 tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
@@ -95,6 +97,8 @@ class chatBot(object):
 		self.hierarchy = FLAGS.hierarchy
 		self.visualize = FLAGS.visualize
 		self.rnn = FLAGS.rnn
+		self.shift_size = FLAGS.shift_size
+		self.lba = FLAGS.lba
 
 		# Create Model Store Directory
 		if not os.path.exists(self.model_dir):
@@ -126,7 +130,7 @@ class chatBot(object):
 										   optimizer=self.optimizer, task_id=self.task_id, pointer=self.pointer,
 										   dropout=self.dropout, char_emb=self.char_emb, rnn=self.rnn,
 										   reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss,
-										   gated=self.gated, hierarchy=self.hierarchy)
+										   gated=self.gated, hierarchy=self.hierarchy, shift_size=self.shift_size, lba=self.lba)
 		self.saver = tf.train.Saver(max_to_keep=4)
 
 	def build_vocab(self, data):
@@ -155,7 +159,7 @@ class chatBot(object):
 						  self.batch_size, self.memory_size, 
 						  self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						  self.char_emb_length, self.char_emb_overlap)
-		Data_val = Data(self.valData, self.word_idx, self.sentence_size, 
+		Data_val = Data(self.testData, self.word_idx, self.sentence_size, 
 						self.batch_size, self.memory_size, 
 						self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						self.char_emb_length, self.char_emb_overlap)

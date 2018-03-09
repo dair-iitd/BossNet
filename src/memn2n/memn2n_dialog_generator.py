@@ -72,7 +72,9 @@ class MemN2NGeneratorDialog(object):
 				 char_emb_size=256,
 				 p_gen_loss=False,
 				 gated=False,
-				 hierarchy=True):
+				 hierarchy=True,
+				 shift_size=2,
+				 lba=False):
 
 		"""Creates an End-To-End Memory Network
 
@@ -131,7 +133,9 @@ class MemN2NGeneratorDialog(object):
 		self._gated = gated
 		self._hierarchy = hierarchy
 		self._rnn = rnn
-		
+		self._shift_size = shift_size
+		self._lba = lba
+
 		# add unk and eos
 		self.UNK = decoder_vocab_to_index["UNK"]
 		self.EOS = decoder_vocab_to_index["EOS"]
@@ -453,7 +457,7 @@ class MemN2NGeneratorDialog(object):
 				if self._pointer:
 					reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
 					self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory, hierarchy=self._hierarchy)
-					decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False, dropout=self._dropout)			
+					decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False, dropout=self._dropout, shift_size=self._shift_size, lba=self._lba)			
 					wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
 					decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
 				else:

@@ -488,9 +488,9 @@ class CustomAttention(_BaseAttentionMechanism):
       word_alignments = self._probability_fn(word_scores)
       word_alignments = tf.reshape(word_alignments, tf.stack([self._batch_size, -1, shape]))
       hier_alignments = word_alignments
+    #[batch_size x memory_size x sentence_size]
     hier_alignments = tf.reshape(hier_alignments, [self._batch_size, -1])
     return line_alignments, word_alignments, hier_alignments
-
 
 class AttentionWrapperState(
     collections.namedtuple("AttentionWrapperState",
@@ -613,6 +613,8 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
                output_attention=True,
                initial_cell_state=None,
                dropout=False,
+               shift_size=2,
+               lba=False,
                name=None):
     """Construct the `AttentionWrapper`.
 
@@ -742,6 +744,8 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
     self._alignment_history = alignment_history
     self._keep_prob = keep_prob
     self._dropout = dropout
+    self._shift_size = shift_size
+    self._lba = lba
     with ops.name_scope(name, "AttentionWrapperInit"):
       if initial_cell_state is None:
         self._initial_cell_state = None
@@ -950,6 +954,24 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
       p_gens = tf.nn.dropout(tf.sigmoid(linear([cell_state, cell_inputs], 1, True)), self._keep_prob)
     else:
       p_gens = tf.sigmoid(linear([cell_state, cell_inputs], 1, True))
+
+    if self._lba:
+      self.controller_output_size = 1 + (2*self._shift_size + 1)
+      controller_output = linear([cell_state, cell_inputs], self.controller_output_size, True, scope='controller')
+      gamma = tf.nn.softplus(controller_output[:, :1])
+      shift = tf.nn.softmax(controller_output[:, 1:])
+      shift = tf.reshape(tf.tile(tf.expand_dims(shift, -1),  tf.stack([1,attention_mechanism.alignments_size,1])), [-1, 2*self._shift_size + 1])
+      shape = word_alignments.get_shape().as_list()[-1]
+      hier_alignments = tf.reshape(hier_alignments, tf.stack([attention_mechanism.batch_size, attention_mechanism.alignments_size, shape]))
+      hier_alignments = tf.reshape(hier_alignments, tf.stack([-1, shape]))
+      padded_weights = tf.concat([hier_alignments[:, -self._shift_size:],hier_alignments[:,:],hier_alignments[:, :self._shift_size]],axis=1)
+      # conv_input = [1 x sentence_size x (batch x memory)]
+      conv_input = tf.expand_dims(tf.transpose(tf.expand_dims(padded_weights, 0), [0,2,1]), 1)
+      kernels = tf.expand_dims(tf.transpose(tf.expand_dims(shift, 0), [0,2,1]), -1)
+      conv_output = tf.nn.depthwise_conv2d(conv_input,kernels,strides=[1,1,1,1],padding = 'VALID')
+      shifted_weight = tf.transpose(tf.squeeze(conv_output))
+      hier_alignments = tf.reshape(shifted_weight, tf.stack([attention_mechanism.batch_size, -1, shape]))
+      hier_alignments = tf.reshape(hier_alignments, [attention_mechanism.batch_size, -1])
 
     if self._output_attention:
       return attention, next_state
