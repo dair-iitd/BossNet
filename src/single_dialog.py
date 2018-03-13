@@ -159,7 +159,7 @@ class chatBot(object):
 						  self.batch_size, self.memory_size, 
 						  self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						  self.char_emb_length, self.char_emb_overlap)
-		Data_val = Data(self.testData, self.word_idx, self.sentence_size, 
+		Data_val = Data(self.valData, self.word_idx, self.sentence_size, 
 						self.batch_size, self.memory_size, 
 						self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						self.char_emb_length, self.char_emb_overlap)
