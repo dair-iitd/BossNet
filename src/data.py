@@ -7,6 +7,7 @@ UNK_INDEX = 1
 GO_SYMBOL_INDEX = 2
 EOS_INDEX = 3
 
+
 class Data(object):
 
     def __init__(self,

@@ -54,7 +54,7 @@ def load_candidates(data_dir, task_id):
             candidates.append(line)
     return candidates,candid_dic
 
-def get_decoder_vocab(data_dir, task_id):
+def get_decoder_vocab(data_dir, task_id, vocab_ext):
     ''' 
         Load Candidate Vocabulary Space for Decoder 
     '''
@@ -78,7 +78,7 @@ def get_decoder_vocab(data_dir, task_id):
     files = os.listdir(data_dir)
     files = [os.path.join(data_dir, f) for f in files]
     s = 'dialog-babi-task{}-'.format(task_id)
-    train_file = [f for f in files if s in f and 'trn' in f][0]
+    train_file = [f for f in files if s in f and vocab_ext in f][0]
     
     candidate_sentence_size = 0
     responses = get_responses(train_file)
@@ -93,7 +93,7 @@ def get_decoder_vocab(data_dir, task_id):
                 decoder_index_to_vocab[index]=word
     return decoder_vocab_to_index,decoder_index_to_vocab,candidate_sentence_size+1
 
-def load_dialog_task(data_dir, task_id, isOOV):
+def load_dialog_task(data_dir, task_id, vocab_ext):
     ''' 
         Load Train, Test, Validation Dialogs 
     '''
@@ -102,17 +102,16 @@ def load_dialog_task(data_dir, task_id, isOOV):
     files = [os.path.join(data_dir, f) for f in files]
     s = 'dialog-babi-task{}-'.format(task_id)
     train_file = [f for f in files if s in f and 'trn' in f][0]
-    if isOOV:
-        test_file = [f for f in files if s in f and 'tst-OOV' in f][0]
-    else:
-        # the cluster sometimes picks the OOV file instead of on-OOV file
-        # added the -n to fix the issue
-        test_file = [f for f in files if s in f and 'tst' in f and 'OOV' not in f][0]
+    oov_file = [f for f in files if s in f and 'tst-OOV' in f][0]
+    test_file = [f for f in files if s in f and 'tst' in f and 'OOV' not in f][0]
     val_file = [f for f in files if s in f and 'dev' in f][0]
+    mod_file = [f for f in files if s in f and vocab_ext in f][0]
     train_data = get_dialogs(train_file)
     test_data = get_dialogs(test_file)
     val_data = get_dialogs(val_file)
-    return train_data, test_data, val_data
+    oov_data = get_dialogs(oov_file)
+    mod_data = get_dialogs(mod_file)
+    return train_data, test_data, val_data, oov_data, mod_data
 
 def tokenize(sent):
     '''

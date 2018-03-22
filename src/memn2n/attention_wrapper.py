@@ -323,8 +323,8 @@ def _luong_score(query, keys, scale):
   score = math_ops.matmul(query, keys, transpose_b=True)
   score = array_ops.squeeze(score, [1])
 
-  # return tf.nn.l2_normalize(score, dim=1, epsilon=1e-12, name=None)
-  return score
+  return tf.nn.l2_normalize(score, dim=1, epsilon=1e-12, name=None)
+  # return score
 
 def _luong_word_score(query, word_keys, scale, size, hierarchy):
   """Implements Luong-style (multiplicative) scoring function.
@@ -381,11 +381,11 @@ def _luong_word_score(query, word_keys, scale, size, hierarchy):
   scores = tf.map_fn(context_fn, word_keys)
   scores = tf.transpose(scores, [1, 0, 2])
 
-  # if hierarchy:
-  #   return tf.nn.l2_normalize(scores, dim=2, epsilon=1e-12, name=None)
-  # else:
-  #   return tf.nn.l2_normalize(scores, dim=[1,2], epsilon=1e-12, name=None)
-  return scores
+  if hierarchy:
+    return tf.nn.l2_normalize(scores, dim=2, epsilon=1e-12, name=None)
+  else:
+    return tf.nn.l2_normalize(scores, dim=[1,2], epsilon=1e-12, name=None)
+  # return scores
 
 class CustomAttention(_BaseAttentionMechanism):
   """Implements Luong-style (multiplicative) attention scoring.
@@ -478,10 +478,10 @@ class CustomAttention(_BaseAttentionMechanism):
     line_alignments = self._probability_fn(line_scores)
     word_alignments = self._probability_fn(word_scores)
     if self._hierarchy:
-      temp_word_alignments = tf.transpose(word_alignments, [0,2,1])
-      temp_line_alignments = tf.expand_dims(line_alignments, 1)
-      # temp_word_alignments = tf.transpose(word_scores, [0,2,1])
-      # temp_line_alignments = tf.expand_dims(line_scores, 1)
+      # temp_word_alignments = tf.transpose(word_alignments, [0,2,1])
+      # temp_line_alignments = tf.expand_dims(line_alignments, 1)
+      temp_word_alignments = tf.transpose(word_scores, [0,2,1])
+      temp_line_alignments = tf.expand_dims(line_scores, 1)
       hier_alignments = math_ops.multiply(temp_word_alignments, temp_line_alignments)
       hier_alignments = tf.transpose(hier_alignments, [0,2,1])
     else:

@@ -58,6 +58,7 @@ tf.flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 tf.flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory containing bAbI tasks")
 tf.flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 tf.flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
+tf.flags.DEFINE_string("vocab_ext", "dev", "Data Set used to build the decode vocabulary")
 
 FLAGS = tf.flags.FLAGS
 
@@ -99,6 +100,7 @@ class chatBot(object):
 		self.rnn = FLAGS.rnn
 		self.shift_size = FLAGS.shift_size
 		self.lba = FLAGS.lba
+		self.vocab_ext = FLAGS.vocab_ext
 
 		# Create Model Store Directory
 		if not os.path.exists(self.model_dir):
@@ -111,15 +113,15 @@ class chatBot(object):
 			print("Task ", self.task_id, " learning rate : ", self.learning_rate)
 		
 		# Load Decoder Vocabulary
-		self.decoder_vocab_to_index, self.decoder_index_to_vocab, self.candidate_sentence_size = get_decoder_vocab(self.data_dir, self.task_id)
+		self.decoder_vocab_to_index, self.decoder_index_to_vocab, self.candidate_sentence_size = get_decoder_vocab(self.data_dir, self.task_id, self.vocab_ext)
 		print("Decoder Vocab Size : ", len(self.decoder_vocab_to_index))
 
 		# Retreive Task Data
-		self.trainData, self.testData, self.valData = load_dialog_task(self.data_dir, self.task_id, self.OOV)
-		self.trainDataVocab, self.testDataVocab, self.valDataVocab = load_dialog_task(self.data_dir, self.task_id, False)
+		self.trainData, self.testData, self.valData, self.testOOVData, self.modData = load_dialog_task(self.data_dir, self.task_id, self.vocab_ext)
+		# self.trainDataVocab, self.testDataVocab, self.valDataVocab = load_dialog_task(self.data_dir, self.task_id, False)
 		
-		# Build vocab only with training data
-		self.build_vocab(self.trainDataVocab)
+		# Build vocab only with modified data
+		self.build_vocab(self.modData)
 
 		# Define MemN2N + Generator Model
 		self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=self.epsilon)
@@ -163,11 +165,23 @@ class chatBot(object):
 						self.batch_size, self.memory_size, 
 						self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						self.char_emb_length, self.char_emb_overlap)
+		Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
+						self.batch_size, self.memory_size, 
+						self.decoder_vocab_to_index, self.candidate_sentence_size, 
+						self.char_emb_length, self.char_emb_overlap)
+		Data_test_OOV = Data(self.testOOVData, self.word_idx, self.sentence_size, 
+						self.batch_size, self.memory_size, 
+						self.decoder_vocab_to_index, self.candidate_sentence_size, 
+						self.char_emb_length, self.char_emb_overlap)
 		# Create Batches
 		n_train = len(Data_train.stories)
 		n_val = len(Data_val.stories)
+		n_test = len(Data_test.stories)
+		n_oov = len(Data_test_OOV.stories)
 		print("Training Size", n_train)
 		print("Validation Size", n_val)
+		print("Test Size", n_test)
+		print("OOV Size", n_oov)
 		tf.set_random_seed(self.random_state)
 		batches = zip(range(0, n_train - self.batch_size, self.batch_size),
 					  range(self.batch_size, n_train, self.batch_size))
@@ -205,6 +219,17 @@ class chatBot(object):
 					model_count += 1
 					best_validation_accuracy = val_accuracies[0][0]
 					self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
+					test_accuracies = self.batch_predict(Data_test, n_test)
+					test_oov_accuracies = self.batch_predict(Data_test_OOV, n_oov)
+					if self.pointer:
+						print("Test Accuracy (Substring / Actual) : ", test_accuracies[1][0], test_accuracies[1][1])
+						print("Test Accuracy + Attention : ", test_accuracies[0][0], test_accuracies[0][1])
+						print("Test OOV Accuracy (Substring / Actual) : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
+						print("Test OOV Accuracy + Attention : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+					else:
+						print("Test Accuracy (Substring / Actual) : ", test_accuracies[0][0], test_accuracies[0][1])
+						print("Test OOV Accuracy (Substring / Actual) : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+				print('-----------------------')
 
 				if model_count >= 10 and self.word_drop_flag:
 					self.word_drop = True
@@ -223,7 +248,13 @@ class chatBot(object):
 		if self.isInteractive:
 			self.interactive()
 		else:
-			Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
+			if not self.OOV:
+				Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
+							 self.batch_size, self.memory_size, 
+							 self.decoder_vocab_to_index, self.candidate_sentence_size, 
+							 self.char_emb_length, self.char_emb_overlap)
+			else:
+				Data_test = Data(self.testOOVData, self.word_idx, self.sentence_size, 
 							 self.batch_size, self.memory_size, 
 							 self.decoder_vocab_to_index, self.candidate_sentence_size, 
 							 self.char_emb_length, self.char_emb_overlap)
