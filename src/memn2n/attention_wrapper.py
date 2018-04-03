@@ -408,6 +408,8 @@ class CustomAttention(_BaseAttentionMechanism):
                num_units,
                line_memory,
                word_memory=None,
+               word_softmax=False,
+               line_softmax=False,
                hierarchy=True,
                line_memory_sequence_length=None,
                word_memory_sequence_length=None,
@@ -456,6 +458,8 @@ class CustomAttention(_BaseAttentionMechanism):
     self._scale = scale
     self._name = name
     self._hierarchy = hierarchy
+    self._word_softmax = word_softmax
+    self._line_softmax = line_softmax
 
   def __call__(self, query, previous_alignments):
     """Score the query based on the keys and values.
@@ -478,10 +482,14 @@ class CustomAttention(_BaseAttentionMechanism):
     line_alignments = self._probability_fn(line_scores)
     word_alignments = self._probability_fn(word_scores)
     if self._hierarchy:
-      # temp_word_alignments = tf.transpose(word_alignments, [0,2,1])
-      # temp_line_alignments = tf.expand_dims(line_alignments, 1)
-      temp_word_alignments = tf.transpose(word_scores, [0,2,1])
-      temp_line_alignments = tf.expand_dims(line_scores, 1)
+      if self._word_softmax:
+        temp_word_alignments = tf.transpose(word_alignments, [0,2,1])
+      else:
+        temp_word_alignments = tf.transpose(word_scores, [0,2,1])
+      if self._line_softmax:
+        temp_line_alignments = tf.expand_dims(line_alignments, 1)
+      else:
+        temp_line_alignments = tf.expand_dims(line_scores, 1)
       hier_alignments = math_ops.multiply(temp_word_alignments, temp_line_alignments)
       hier_alignments = tf.transpose(hier_alignments, [0,2,1])
     else:

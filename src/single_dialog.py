@@ -41,6 +41,8 @@ tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
 tf.flags.DEFINE_boolean('pointer', False, 'if True, uses pointer network')
 tf.flags.DEFINE_boolean("hierarchy", True, "if True, uses hierarchy pointer attention")
 tf.flags.DEFINE_boolean("gated", False, "if True, uses gated memory network")
+tf.flags.DEFINE_boolean("word_softmax", False, "if True, uses gated memory network")
+tf.flags.DEFINE_boolean("line_softmax", False, "if True, uses gated memory network")
 tf.flags.DEFINE_boolean("rnn", False, "if True, uses bi-directional-rnn to encode, else Bag of Words")
 
 # Output and Evaluation Specifications
@@ -101,6 +103,8 @@ class chatBot(object):
 		self.shift_size = FLAGS.shift_size
 		self.lba = FLAGS.lba
 		self.vocab_ext = FLAGS.vocab_ext
+		self.word_softmax = FLAGS.word_softmax
+		self.line_softmax = FLAGS.line_softmax
 
 		# Create Model Store Directory
 		if not os.path.exists(self.model_dir):
@@ -115,6 +119,7 @@ class chatBot(object):
 		# Load Decoder Vocabulary
 		self.decoder_vocab_to_index, self.decoder_index_to_vocab, self.candidate_sentence_size = get_decoder_vocab(self.data_dir, self.task_id, self.vocab_ext)
 		print("Decoder Vocab Size : ", len(self.decoder_vocab_to_index))
+		sys.stdout.flush()
 
 		# Retreive Task Data
 		self.trainData, self.testData, self.valData, self.testOOVData, self.modData = load_dialog_task(self.data_dir, self.task_id, self.vocab_ext)
@@ -132,7 +137,8 @@ class chatBot(object):
 										   optimizer=self.optimizer, task_id=self.task_id, pointer=self.pointer,
 										   dropout=self.dropout, char_emb=self.char_emb, rnn=self.rnn,
 										   reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss,
-										   gated=self.gated, hierarchy=self.hierarchy, shift_size=self.shift_size, lba=self.lba)
+										   gated=self.gated, hierarchy=self.hierarchy, shift_size=self.shift_size, lba=self.lba, 
+										   word_softmax=self.word_softmax, line_softmax=self.line_softmax)
 		self.saver = tf.train.Saver(max_to_keep=4)
 
 	def build_vocab(self, data):
@@ -182,6 +188,7 @@ class chatBot(object):
 		print("Validation Size", n_val)
 		print("Test Size", n_test)
 		print("OOV Size", n_oov)
+		sys.stdout.flush()
 		tf.set_random_seed(self.random_state)
 		batches = zip(range(0, n_train - self.batch_size, self.batch_size),
 					  range(self.batch_size, n_train, self.batch_size))
@@ -230,6 +237,7 @@ class chatBot(object):
 						print("Test Accuracy (Substring / Actual) : ", test_accuracies[0][0], test_accuracies[0][1])
 						print("Test OOV Accuracy (Substring / Actual) : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
 				print('-----------------------')
+				sys.stdout.flush()
 
 				if model_count >= 10 and self.word_drop_flag:
 					self.word_drop = True
@@ -345,7 +353,7 @@ if __name__ == '__main__':
 
 	chatbot = chatBot()
 	
-	print("CHATBOT READY")
+	print("CHATBOT READY"); sys.stdout.flush();
 
 	if FLAGS.train: chatbot.train()
 	else: chatbot.test()
