@@ -38,12 +38,14 @@ def load_candidates(data_dir, task_id):
     ''' 
         Load Candidate Responses 
     '''
-    assert task_id > 0 and task_id < 7
+    assert task_id > 0 and task_id < 8
     candidates=[]
     candid_dic={}
     # Get Candidate File
     if task_id==6:
         candidates_f='dialog-babi-task6-dstc2-candidates.txt'
+    elif task_id==7:
+        candidates_f='dialog-babi-task7-camrest676-candidates.txt'
     else:
         candidates_f='dialog-babi-candidates.txt'
 
@@ -58,7 +60,7 @@ def get_decoder_vocab(data_dir, task_id, vocab_ext):
     ''' 
         Load Candidate Vocabulary Space for Decoder 
     '''
-    assert task_id > 0 and task_id < 7
+    assert task_id > 0 and task_id < 8
     decoder_vocab_to_index={}
     decoder_index_to_vocab={}
     # Pad Symbol
@@ -97,19 +99,23 @@ def load_dialog_task(data_dir, task_id, vocab_ext):
     ''' 
         Load Train, Test, Validation Dialogs 
     '''
-    assert task_id > 0 and task_id < 7
+    assert task_id > 0 and task_id < 8
     files = os.listdir(data_dir)
     files = [os.path.join(data_dir, f) for f in files]
     s = 'dialog-babi-task{}-'.format(task_id)
     train_file = [f for f in files if s in f and 'trn' in f][0]
-    oov_file = [f for f in files if s in f and 'tst-OOV' in f][0]
+    if task_id < 6:
+        oov_file = [f for f in files if s in f and 'tst-OOV' in f][0]
     test_file = [f for f in files if s in f and 'tst' in f and 'OOV' not in f][0]
     val_file = [f for f in files if s in f and 'dev' in f][0]
     mod_file = [f for f in files if s in f and vocab_ext in f][0]
     train_data = get_dialogs(train_file)
     test_data = get_dialogs(test_file)
     val_data = get_dialogs(val_file)
-    oov_data = get_dialogs(oov_file)
+    if task_id > 5:
+        oov_data = test_data
+    else:
+        oov_data = get_dialogs(oov_file)
     mod_data = get_dialogs(mod_file)
     return train_data, test_data, val_data, oov_data, mod_data
 
@@ -250,13 +256,27 @@ def substring_accuracy_score(preds, vals, word_map=None, isTrain=True):
                 print('-----')
     return [(float(total_sub_score) / len(preds))*100, (float(total_score) / len(preds))*100]
 
-def bleu_accuracy_score(preds, vals, word_map=None, isTrain=True):
-    total_score = 0.0
-    for pred, val in zip(preds, vals):
-        reference = [word_map[x] if x in word_map else 'UNK' for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
-        hypothesis = [word_map[x] if x in word_map else 'UNK' for x in val if x != EOS_INDEX and x != PAD_INDEX]
-        total_score += corpus_bleu([[reference]], [hypothesis])
-    return (float(total_score) / len(preds))*100
+def get_tokenized_response_from_padded_vector(vector, word_map):
+    tokenized_response = []
+    for x in vector:
+        if x == EOS_INDEX or x == PAD_INDEX:
+            return tokenized_response
+        if x in word_map:
+            tokenized_response.append(word_map[x])
+        else:
+            tokenized_response.append('UNK')
+    return tokenized_response
+
+def bleu_accuracy_score(preds, refs, word_map=None, isTrain=True):
+    
+    references = []
+    hypothesis = []
+    
+    for pred, ref in zip(preds, refs):
+        references.append([get_tokenized_response_from_padded_vector(ref, word_map)])
+        hypothesis.append(get_tokenized_response_from_padded_vector(pred, word_map))
+        
+    return corpus_bleu(references, hypothesis)
 
 def new_eval_score(preds, vals, dbset, word_map=None):
     match=0

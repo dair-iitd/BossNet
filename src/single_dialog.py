@@ -46,8 +46,8 @@ tf.flags.DEFINE_boolean("line_softmax", False, "if True, uses gated memory netwo
 tf.flags.DEFINE_boolean("rnn", False, "if True, uses bi-directional-rnn to encode, else Bag of Words")
 
 # Output and Evaluation Specifications
-tf.flags.DEFINE_integer("evaluation_interval", 2, "Evaluate and print results every x epochs")
-tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score')
+tf.flags.DEFINE_integer("evaluation_interval", 5, "Evaluate and print results every x epochs")
+tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score to compute best model')
 tf.flags.DEFINE_boolean("new_eval", True, 'if True, uses new evaluation score')
 tf.flags.DEFINE_boolean("visualize", False, "if True, uses visualize_attention tool")
 
@@ -60,7 +60,7 @@ tf.flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 tf.flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory containing bAbI tasks")
 tf.flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 tf.flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
-tf.flags.DEFINE_string("vocab_ext", "dev", "Data Set used to build the decode vocabulary")
+tf.flags.DEFINE_string("vocab_ext", "trn", "Data Set used to build the decode vocabulary")
 
 FLAGS = tf.flags.FLAGS
 
@@ -105,6 +105,9 @@ class chatBot(object):
 		self.vocab_ext = FLAGS.vocab_ext
 		self.word_softmax = FLAGS.word_softmax
 		self.line_softmax = FLAGS.line_softmax
+
+		if self.task_id == 7:
+			self.bleu_score=True
 
 		# Create Model Store Directory
 		if not os.path.exists(self.model_dir):
@@ -193,6 +196,10 @@ class chatBot(object):
 		batches = zip(range(0, n_train - self.batch_size, self.batch_size),
 					  range(self.batch_size, n_train, self.batch_size))
 		batches = [(start, end) for start, end in batches]
+		# fix to include last batch
+		if batches[-1][1] < n_train:
+			batches.append((batches[-1][1], n_train))
+
 		best_validation_accuracy = 0
 		model_count = 0
 		self.word_drop = False
@@ -211,32 +218,70 @@ class chatBot(object):
 				print('Epoch', t)
 				print('Total Cost:', total_cost)
 				if self.pointer:
-					print("Train Accuracy (Substring / Actual) : ", train_accuracies[1][0], train_accuracies[1][1])
-					print("Train Accuracy + Attention : ", train_accuracies[0][0], train_accuracies[0][1])
-					print("Validation Accuracy (Substring / Actual) : ", val_accuracies[1][0], val_accuracies[1][1])
-					print("Validation Accuracy + Attention : ", val_accuracies[0][0], val_accuracies[0][1])
+					if self.bleu_score:
+						print("Train BLEU      : ", train_accuracies[2], train_accuracies[3])
+						print("Validation BLEU : ", val_accuracies[2], val_accuracies[3])
+					else:
+						print("Train Accuracy (Substring / Actual)      : ", train_accuracies[1][0], train_accuracies[1][1])
+						print("Train Accuracy + Attention               : ", train_accuracies[0][0], train_accuracies[0][1])
+						print("Validation Accuracy (Substring / Actual) : ", val_accuracies[1][0], val_accuracies[1][1])
+						print("Validation Accuracy + Attention          : ", val_accuracies[0][0], val_accuracies[0][1])
 				else:
-					print("Train Accuracy (Substring / Actual) : ", train_accuracies[0][0], train_accuracies[0][1])
-					print("Validation Accuracy (Substring / Actual) : ", val_accuracies[0][0], val_accuracies[0][1])
+					if self.bleu_score:
+						print("Train BLEU      : ", train_accuracies[1])
+						print("Validation BLEU : ", val_accuracies[1])
+					else:
+						print("Train Accuracy (Substring / Actual)      : ", train_accuracies[0][0], train_accuracies[0][1])
+						print("Validation Accuracy (Substring / Actual) : ", val_accuracies[0][0], val_accuracies[0][1])
 				print('-----------------------')
 				sys.stdout.flush()
 				
 				# Save best model
-				if val_accuracies[0][0] >= best_validation_accuracy:
+
+				val_score = val_accuracies[0][0]
+				if self.bleu_score:
+					idx = 1
+					if self.pointer:
+						idx = 2
+					val_score = val_accuracies[idx]
+					
+				if val_score >= best_validation_accuracy:
 					model_count += 1
-					best_validation_accuracy = val_accuracies[0][0]
+					best_validation_accuracy = val_score
 					self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
 					test_accuracies = self.batch_predict(Data_test, n_test)
-					test_oov_accuracies = self.batch_predict(Data_test_OOV, n_oov)
+					if self.task_id < 6:
+						test_oov_accuracies = self.batch_predict(Data_test_OOV, n_oov)
 					if self.pointer:
-						print("Test Accuracy (Substring / Actual) : ", test_accuracies[1][0], test_accuracies[1][1])
-						print("Test Accuracy + Attention : ", test_accuracies[0][0], test_accuracies[0][1])
-						print("Test OOV Accuracy (Substring / Actual) : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
-						print("Test OOV Accuracy + Attention : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+						
+						if self.bleu_score:
+							print("Test BLEU : ", test_accuracies[2], test_accuracies[3])
+						else:
+							print("Test Accuracy (Substring / Actual) : ", test_accuracies[1][0], test_accuracies[1][1])
+							print("Test Accuracy + Attention : ", test_accuracies[0][0], test_accuracies[0][1])
+						
+						if self.task_id < 6:
+							if self.bleu_score:
+								print("Test BLEU : ", test_oov_accuracies[2], test_oov_accuracies[3])
+							else:
+								print("Test OOV Accuracy (Substring / Actual) : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
+								print("Test OOV Accuracy + Attention : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+							
 					else:
-						print("Test Accuracy (Substring / Actual) : ", test_accuracies[0][0], test_accuracies[0][1])
-						print("Test OOV Accuracy (Substring / Actual) : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
-				print('-----------------------')
+						
+						if self.bleu_score:
+							print("Test BLEU : ", test_accuracies[1])
+						else:
+							print("Test Accuracy (Substring / Actual) : ", test_accuracies[0][0], test_accuracies[0][1])
+						
+						if self.task_id < 6:
+							if self.bleu_score:
+								print("Test BLEU : ", test_accuracies[1])
+							else:
+								print("Test OOV Accuracy (Substring / Actual) : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+				
+					print('-----------------------')
+				
 				sys.stdout.flush()
 
 				if model_count >= 10 and self.word_drop_flag:
