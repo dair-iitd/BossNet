@@ -323,8 +323,8 @@ def _luong_score(query, keys, scale):
   score = math_ops.matmul(query, keys, transpose_b=True)
   score = array_ops.squeeze(score, [1])
 
-  return tf.nn.l2_normalize(score, dim=1, epsilon=1e-12, name=None)
-  # return score
+  # return tf.nn.l2_normalize(score, dim=1, epsilon=1e-12, name=None)
+  return score
 
 def _luong_word_score(query, word_keys, scale, size, hierarchy):
   """Implements Luong-style (multiplicative) scoring function.
@@ -381,11 +381,11 @@ def _luong_word_score(query, word_keys, scale, size, hierarchy):
   scores = tf.map_fn(context_fn, word_keys)
   scores = tf.transpose(scores, [1, 0, 2])
 
-  if hierarchy:
-    return tf.nn.l2_normalize(scores, dim=2, epsilon=1e-12, name=None)
-  else:
-    return tf.nn.l2_normalize(scores, dim=[1,2], epsilon=1e-12, name=None)
-  # return scores
+  # if hierarchy:
+  #   return tf.nn.l2_normalize(scores, dim=2, epsilon=1e-12, name=None)
+  # else:
+  #   return tf.nn.l2_normalize(scores, dim=[1,2], epsilon=1e-12, name=None)
+  return scores
 
 class CustomAttention(_BaseAttentionMechanism):
   """Implements Luong-style (multiplicative) attention scoring.
@@ -410,6 +410,7 @@ class CustomAttention(_BaseAttentionMechanism):
                word_memory=None,
                word_softmax=False,
                line_softmax=False,
+               soft_weight=False,
                hierarchy=True,
                line_memory_sequence_length=None,
                word_memory_sequence_length=None,
@@ -460,7 +461,7 @@ class CustomAttention(_BaseAttentionMechanism):
     self._hierarchy = hierarchy
     self._word_softmax = word_softmax
     self._line_softmax = line_softmax
-
+    self._soft_weight = soft_weight
   def __call__(self, query, previous_alignments):
     """Score the query based on the keys and values.
 
@@ -479,17 +480,23 @@ class CustomAttention(_BaseAttentionMechanism):
     with variable_scope.variable_scope(None, "custom_attention", [query]):
       line_scores = _luong_score(query, self._keys, self._scale)
       word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size, self._hierarchy)
-    line_alignments = self._probability_fn(line_scores)
-    word_alignments = self._probability_fn(word_scores)
+    
+    if self._line_softmax:
+      line_alignments = self._soft_weight*self._probability_fn(line_scores)
+    else:
+      line_alignments = tf.nn.l2_normalize(line_scores, dim=1, epsilon=1e-12, name=None)
+    
+    if self._word_softmax:
+      word_alignments = self._soft_weight*self._probability_fn(word_scores)
+    else:
+      if self._hierarchy:
+        word_alignments = tf.nn.l2_normalize(word_scores, dim=2, epsilon=1e-12, name=None)
+      else:
+        word_alignments = tf.nn.l2_normalize(word_scores, dim=[1,2], epsilon=1e-12, name=None)
+    
     if self._hierarchy:
-      if self._word_softmax:
-        temp_word_alignments = tf.transpose(word_alignments, [0,2,1])
-      else:
-        temp_word_alignments = tf.transpose(word_scores, [0,2,1])
-      if self._line_softmax:
-        temp_line_alignments = tf.expand_dims(line_alignments, 1)
-      else:
-        temp_line_alignments = tf.expand_dims(line_scores, 1)
+      temp_word_alignments = tf.transpose(word_alignments, [0,2,1])
+      temp_line_alignments = tf.expand_dims(line_alignments, 1)
       hier_alignments = math_ops.multiply(temp_word_alignments, temp_line_alignments)
       hier_alignments = tf.transpose(hier_alignments, [0,2,1])
     else:

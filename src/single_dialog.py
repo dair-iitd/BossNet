@@ -35,6 +35,7 @@ tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
 tf.flags.DEFINE_boolean('lba', False, 'if True, uses location based addressing')
 tf.flags.DEFINE_integer("shift_size", 2, "Amount of shift allowed for Location Based Addressing")
+tf.flags.DEFINE_integer("soft_weight", 2, "Weight given to softmax function")
 
 # Model Type
 tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
@@ -105,6 +106,7 @@ class chatBot(object):
 		self.vocab_ext = FLAGS.vocab_ext
 		self.word_softmax = FLAGS.word_softmax
 		self.line_softmax = FLAGS.line_softmax
+		self.soft_weight = FLAGS.soft_weight
 
 		if self.task_id == 7:
 			self.bleu_score=True
@@ -141,7 +143,7 @@ class chatBot(object):
 										   dropout=self.dropout, char_emb=self.char_emb, rnn=self.rnn,
 										   reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss,
 										   gated=self.gated, hierarchy=self.hierarchy, shift_size=self.shift_size, lba=self.lba, 
-										   word_softmax=self.word_softmax, line_softmax=self.line_softmax)
+										   word_softmax=self.word_softmax, line_softmax=self.line_softmax, soft_weight=self.soft_weight)
 		self.saver = tf.train.Saver(max_to_keep=4)
 
 	def build_vocab(self, data):
