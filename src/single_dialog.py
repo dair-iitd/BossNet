@@ -38,23 +38,23 @@ tf.flags.DEFINE_integer("shift_size", 2, "Amount of shift allowed for Location B
 tf.flags.DEFINE_integer("soft_weight", 2, "Weight given to softmax function")
 
 # Model Type
-tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
-tf.flags.DEFINE_boolean('pointer', False, 'if True, uses pointer network')
+tf.flags.DEFINE_boolean("char_emb", True, 'if True, uses character embeddings')
+tf.flags.DEFINE_boolean('pointer', True, 'if True, uses pointer network')
 tf.flags.DEFINE_boolean("hierarchy", True, "if True, uses hierarchy pointer attention")
 tf.flags.DEFINE_boolean("gated", False, "if True, uses gated memory network")
-tf.flags.DEFINE_boolean("word_softmax", False, "if True, uses gated memory network")
-tf.flags.DEFINE_boolean("line_softmax", False, "if True, uses gated memory network")
-tf.flags.DEFINE_boolean("rnn", False, "if True, uses bi-directional-rnn to encode, else Bag of Words")
+tf.flags.DEFINE_boolean("word_softmax", True, "if True, uses gated memory network")
+tf.flags.DEFINE_boolean("line_softmax", True, "if True, uses gated memory network")
+tf.flags.DEFINE_boolean("rnn", True, "if True, uses bi-directional-rnn to encode, else Bag of Words")
 
 # Output and Evaluation Specifications
-tf.flags.DEFINE_integer("evaluation_interval", 5, "Evaluate and print results every x epochs")
+tf.flags.DEFINE_integer("evaluation_interval", 4, "Evaluate and print results every x epochs")
 tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score to compute best model')
 tf.flags.DEFINE_boolean("new_eval", True, 'if True, uses new evaluation score')
 tf.flags.DEFINE_boolean("visualize", False, "if True, uses visualize_attention tool")
 
 # Task Type
 tf.flags.DEFINE_boolean('train', False, 'if True, begin to train')
-tf.flags.DEFINE_integer("task_id", 3, "bAbI task id, 1 <= id <= 6")
+tf.flags.DEFINE_integer("task_id", 3, "bAbI task id, 1 <= id <= 8")
 tf.flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 
 # File Locations
@@ -71,7 +71,7 @@ class chatBot(object):
 		# Define Parameters of ChatBot
 		self.data_dir = FLAGS.data_dir
 		self.task_id = FLAGS.task_id
-		self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + "_emb-size-" + str(FLAGS.embedding_size) + "_model/"
+		self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + "_emb-size-" + str(FLAGS.embedding_size) + "_sw-" + str(FLAGS.soft_weight) + "_model/"
 		self.logs_dir = FLAGS.logs_dir
 		self.isInteractive = FLAGS.interactive
 		self.OOV = FLAGS.OOV
@@ -180,19 +180,24 @@ class chatBot(object):
 						self.batch_size, self.memory_size, 
 						self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						self.char_emb_length, self.char_emb_overlap)
-		Data_test_OOV = Data(self.testOOVData, self.word_idx, self.sentence_size, 
-						self.batch_size, self.memory_size, 
-						self.decoder_vocab_to_index, self.candidate_sentence_size, 
-						self.char_emb_length, self.char_emb_overlap)
+		if self.task_id < 6:
+			Data_test_OOV = Data(self.testOOVData, self.word_idx, self.sentence_size, 
+							self.batch_size, self.memory_size, 
+							self.decoder_vocab_to_index, self.candidate_sentence_size, 
+							self.char_emb_length, self.char_emb_overlap)
+		
 		# Create Batches
 		n_train = len(Data_train.stories)
 		n_val = len(Data_val.stories)
 		n_test = len(Data_test.stories)
-		n_oov = len(Data_test_OOV.stories)
 		print("Training Size", n_train)
 		print("Validation Size", n_val)
 		print("Test Size", n_test)
-		print("OOV Size", n_oov)
+		
+		if self.task_id < 6:
+			n_oov = len(Data_test_OOV.stories)
+			print("Test OOV Size", n_oov)
+		
 		sys.stdout.flush()
 		tf.set_random_seed(self.random_state)
 		batches = zip(range(0, n_train - self.batch_size, self.batch_size),
@@ -240,7 +245,7 @@ class chatBot(object):
 				
 				# Save best model
 
-				val_score = val_accuracies[0][0]
+				val_score = val_accuracies[0][1]
 				if self.bleu_score:
 					idx = 1
 					if self.pointer:
@@ -257,30 +262,30 @@ class chatBot(object):
 					if self.pointer:
 						
 						if self.bleu_score:
-							print("Test BLEU : ", test_accuracies[2], test_accuracies[3])
+							print("Test BLEU       : ", test_accuracies[2], test_accuracies[3])
 						else:
-							print("Test Accuracy (Substring / Actual) : ", test_accuracies[1][0], test_accuracies[1][1])
-							print("Test Accuracy + Attention : ", test_accuracies[0][0], test_accuracies[0][1])
-						
+							print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][0], test_accuracies[1][1])
+							print("Test Accuracy + Attention                : ", test_accuracies[0][0], test_accuracies[0][1])
+							
 						if self.task_id < 6:
 							if self.bleu_score:
-								print("Test BLEU : ", test_oov_accuracies[2], test_oov_accuracies[3])
+								print("Test OOV BLEU   : ", test_oov_accuracies[2], test_oov_accuracies[3])
 							else:
-								print("Test OOV Accuracy (Substring / Actual) : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
-								print("Test OOV Accuracy + Attention : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+								print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
+								print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
 							
 					else:
 						
 						if self.bleu_score:
-							print("Test BLEU : ", test_accuracies[1])
+							print("Test BLEU       : ", test_accuracies[1])
 						else:
-							print("Test Accuracy (Substring / Actual) : ", test_accuracies[0][0], test_accuracies[0][1])
-						
+							print("Test Accuracy (Substring / Actual)       : ", test_accuracies[0][0], test_accuracies[0][1])
+							
 						if self.task_id < 6:
 							if self.bleu_score:
-								print("Test BLEU : ", test_accuracies[1])
+								print("Test OOV BLEU   : ", test_accuracies[1])
 							else:
-								print("Test OOV Accuracy (Substring / Actual) : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+								print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
 				
 					print('-----------------------')
 				

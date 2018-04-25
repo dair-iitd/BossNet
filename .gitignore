@@ -108,6 +108,9 @@ ENV/
 *.log
 *.txt
 *ccc.sh
+*train*sh
+*test*sh
+*cheat*
 model.ckpt-*
 checkpoint
 stats/

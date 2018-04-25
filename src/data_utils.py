@@ -38,7 +38,7 @@ def load_candidates(data_dir, task_id):
     ''' 
         Load Candidate Responses 
     '''
-    assert task_id > 0 and task_id < 8
+    assert task_id > 0 and task_id < 9
     candidates=[]
     candid_dic={}
     # Get Candidate File
@@ -46,6 +46,8 @@ def load_candidates(data_dir, task_id):
         candidates_f='dialog-babi-task6-dstc2-candidates.txt'
     elif task_id==7:
         candidates_f='dialog-babi-task7-camrest676-candidates.txt'
+    elif task_id==8:
+        candidates_f='dialog-babi-task8-kvret-candidates.txt'
     else:
         candidates_f='dialog-babi-candidates.txt'
 
@@ -60,7 +62,7 @@ def get_decoder_vocab(data_dir, task_id, vocab_ext):
     ''' 
         Load Candidate Vocabulary Space for Decoder 
     '''
-    assert task_id > 0 and task_id < 8
+    assert task_id > 0 and task_id < 9
     decoder_vocab_to_index={}
     decoder_index_to_vocab={}
     # Pad Symbol
@@ -99,7 +101,7 @@ def load_dialog_task(data_dir, task_id, vocab_ext):
     ''' 
         Load Train, Test, Validation Dialogs 
     '''
-    assert task_id > 0 and task_id < 8
+    assert task_id > 0 and task_id < 9
     files = os.listdir(data_dir)
     files = [os.path.join(data_dir, f) for f in files]
     s = 'dialog-babi-task{}-'.format(task_id)
@@ -113,7 +115,7 @@ def load_dialog_task(data_dir, task_id, vocab_ext):
     test_data = get_dialogs(test_file)
     val_data = get_dialogs(val_file)
     if task_id > 5:
-        oov_data = test_data
+        oov_data = None
     else:
         oov_data = get_dialogs(oov_file)
     mod_data = get_dialogs(mod_file)
