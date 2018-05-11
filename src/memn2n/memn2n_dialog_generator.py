@@ -77,7 +77,8 @@ class MemN2NGeneratorDialog(object):
 				 lba=False,
 				 word_softmax=False,
 				 line_softmax=False,
-				 soft_weight=False):
+				 soft_weight=False,
+				 position_emb=False):
 
 		"""Creates an End-To-End Memory Network
 
@@ -141,6 +142,7 @@ class MemN2NGeneratorDialog(object):
 		self._word_softmax = word_softmax
 		self._line_softmax = line_softmax
 		self._soft_weight = soft_weight
+		self._position_emb = position_emb
 
 		# add unk and eos
 		self.UNK = decoder_vocab_to_index["UNK"]
@@ -159,15 +161,15 @@ class MemN2NGeneratorDialog(object):
 										  str(task_id), 'summary_output', timestamp)
 
 		if self._pointer:
-			encoder_states, line_memory, word_memory, attn_arr = self._encoder(self._stories, self._queries)
+			encoder_states, line_memory, word_memory, attn_arr = self._encoder(self._stories, self._story_positions, self._queries)
 		else:
-			encoder_states, line_memory, attn_arr = self._encoder(self._stories, self._queries)
+			encoder_states, line_memory, attn_arr = self._encoder(self._stories, self._story_positions, self._queries)
 		
 		# train_op 
 		if self._pointer:
-			loss_op, logits = self._decoder_train(encoder_states, line_memory, word_memory)
+			loss_op, logits, seq_loss_op, pgen_loss_op = self._decoder_train(encoder_states, line_memory, word_memory)
 		else:
-			loss_op, logits = self._decoder_train(encoder_states, line_memory)
+			loss_op, logits, seq_loss_op, pgen_loss_op = self._decoder_train(encoder_states, line_memory)
 
 		# gradient pipeline
 		grads_and_vars = self._opt.compute_gradients(loss_op)
@@ -187,7 +189,7 @@ class MemN2NGeneratorDialog(object):
 			predict_op = self._decoder_runtime(encoder_states, line_memory)
 
 		# assign ops
-		self.loss_op = loss_op, logits
+		self.loss_op = loss_op, logits, seq_loss_op, pgen_loss_op
 		self.predict_op = predict_op
 		self.train_op = train_op
 
@@ -202,6 +204,7 @@ class MemN2NGeneratorDialog(object):
 			Define Input Variables to be given to the model
 		'''
 		self._stories = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="stories")
+		self._story_positions = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="storie_positions")
 		self._queries = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries")
 		self._answers = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers")
 		self._intersection_mask = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="intersection_mask")
@@ -226,6 +229,10 @@ class MemN2NGeneratorDialog(object):
 			nil_word_slot = tf.zeros([1, self._embedding_size])
 			A = tf.concat([nil_word_slot, self._init([self._vocab_size - 1, self._embedding_size])], 0)
 			self.A = tf.Variable(A, name="A")
+			
+			if self._position_emb:
+				P = tf.concat([nil_word_slot, self._init([self._sentence_size, self._embedding_size])], 0)
+				self.P = tf.Variable(P, name="P")
 			
 			C = tf.concat([nil_word_slot, self._init([self._decoder_vocab_size, self._embedding_size])], 0)
 			self.C = tf.Variable(C, name="C")
@@ -285,7 +292,10 @@ class MemN2NGeneratorDialog(object):
 				self.w_reduce_bow = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce_bow")
 				self.bias_reduce_bow = tf.Variable(self._init([self._embedding_size]), name="bias_reduce_bow")
 
-		self._nil_vars = set([self.A.name])
+		if self._position_emb:
+			self._nil_vars = set([self.A.name, self.P.name])
+		else:
+			self._nil_vars = set([self.A.name])
 
 	def _reduce_states_fn(self, fw_st, bw_st):
 		with tf.variable_scope('reduce_final_st'):
@@ -321,7 +331,7 @@ class MemN2NGeneratorDialog(object):
 			return new_c # Return new cell state
 
 
-	def _encoder(self, stories, queries):
+	def _encoder(self, stories, story_positions, queries):
 		with tf.variable_scope(self._name):
 
 			### Set Variables ###
@@ -373,7 +383,10 @@ class MemN2NGeneratorDialog(object):
 			# stories : batch_size x memory_size x sentence_size
 			# memory_word_emb : batch_size x memory_size x sentence_size x embedding_size
 			memory_word_emb = tf.nn.embedding_lookup(self.A, stories)
-
+			if self._position_emb:
+				memory_position_emb = tf.nn.embedding_lookup(self.P, story_positions)
+				memory_word_emb = tf.add(memory_word_emb, memory_position_emb)
+			
 			if self._char_emb:
 				sentence_token_sizes = tf.reshape(self._sentence_word_sizes, [-1])
 				sentence_token_emb = tf.nn.embedding_lookup(self.Z, self._sentence_tokens)
@@ -507,12 +520,16 @@ class MemN2NGeneratorDialog(object):
 					p_gen_logits = tf.concat([p_gens, (1-p_gens)], 2)
 					p_gen_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=intersect_mask, logits=p_gen_logits)
 					crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
-					loss = tf.reduce_sum((crossent + 0.5*p_gen_loss) * target_weights)
+					seq_loss_comp = tf.reduce_sum(crossent * target_weights)
+					pgen_loss_comp = tf.reduce_sum(p_gen_loss * target_weights)
+					loss = seq_loss_comp + pgen_loss_comp
 				else:
 					crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
-					loss = tf.reduce_sum(crossent * target_weights)
+					seq_loss_comp = tf.reduce_sum(crossent * target_weights)
+					pgen_loss_comp = tf.zeros_like(seq_loss_comp)
+					loss = seq_loss_comp
 
-		return loss, final_dists
+		return loss, final_dists, seq_loss_comp, pgen_loss_comp
 
 
 	def _decoder_runtime(self, encoder_states, line_memory, word_memory=None):
@@ -547,6 +564,7 @@ class MemN2NGeneratorDialog(object):
 		"""
 		feed_dict = {}
 		feed_dict[self._stories] = batch.stories
+		feed_dict[self._story_positions] = batch.story_positions
 		feed_dict[self._queries] = batch.queries
 		feed_dict[self._sentence_sizes] = batch.story_sizes
 		feed_dict[self._query_sizes] = batch.query_sizes
@@ -584,7 +602,7 @@ class MemN2NGeneratorDialog(object):
 			loss: floating-point number, the loss computed for the batch
 		"""
 		feed_dict = self._make_feed_dict(batch)
-		loss, _ = self._sess.run([self.loss_op, self.train_op], feed_dict=feed_dict)
+		loss, _= self._sess.run([self.loss_op, self.train_op], feed_dict=feed_dict)
 		return loss
 
 	def predict(self, batch):

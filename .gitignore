@@ -114,3 +114,4 @@ ENV/
 model.ckpt-*
 checkpoint
 stats/
+tmp/

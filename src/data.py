@@ -24,7 +24,7 @@ class Data(object):
         self._decode_vocab_size = len(decoder_vocab)
         self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids = \
             self._extract_data_items(data)
-        self._stories, self._story_sizes, self._story_tokens, self._story_word_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words, self._token_size = \
+        self._stories, self._story_sizes, self._story_tokens, self._story_word_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words, self._token_size, self._story_positions = \
             self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, self._decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap)
         self._queries, self._query_sizes, self._query_tokens, self._query_word_sizes, self._read_queries = \
             self._vectorize_queries(self._queries_ext, word_idx, sentence_size, char_emb_length, char_overlap)
@@ -38,6 +38,10 @@ class Data(object):
     @property
     def stories(self):
         return self._stories
+
+    @property
+    def story_positions(self):
+        return self._story_positions
 
     @property
     def queries(self):
@@ -203,6 +207,7 @@ class Data(object):
 
     def _vectorize_stories(self, stories, word_idx, sentence_size, batch_size, decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap):
         S = []
+        SP = []
         SZ = []
         Word_tokens = []
         SWZ = []
@@ -215,6 +220,7 @@ class Data(object):
             if i % batch_size == 0:
                 memory_size = max(1, min(max_memory_size, len(story)))
             ss = []
+            sps = []
             sizes = []
             tokens = []
             word_sizes = []
@@ -227,6 +233,7 @@ class Data(object):
                 ls = max(0, sentence_size - len(sentence))
                 # Jan 6 : words not in vocab are changed from NIL to UNK
                 ss.append([word_idx[w] if w in word_idx else UNK_INDEX for w in sentence] + [0] * ls)
+                sps.append(list(np.arange(1,len(sentence)+1)) + [0] * ls)
                 sizes.append(len(sentence))
                 word_tokens = [self._tokenize(w, char_emb_length, char_overlap) for w in sentence] + [[]] * ls
                 tokens.append(word_tokens)
@@ -250,6 +257,7 @@ class Data(object):
 
             # take only the most recent sentences that fit in memory
             ss = ss[::-1][:memory_size][::-1]
+            sps = sps[::-1][:memory_size][::-1]
             oov_ids = oov_ids[::-1][:memory_size][::-1]
             sizes = sizes[::-1][:memory_size][::-1]
             tokens = tokens[::-1][:memory_size][::-1]
@@ -260,6 +268,7 @@ class Data(object):
             lm = max(0, memory_size - len(ss))
             for _ in range(lm):
                 ss.append([0] * sentence_size)
+                sps.append([0] * sentence_size)
                 oov_ids.append([0] * sentence_size)
                 sizes.append(0)
                 word_sizes.append([0] * sentence_size)
@@ -267,6 +276,7 @@ class Data(object):
                 story_string.append([''] * sentence_size)
 
             S.append(np.array(ss))
+            SP.append(np.array(sps))
             SZ.append(np.array(sizes))
             Word_tokens.append(tokens)
             SWZ.append(np.array(word_sizes))
@@ -274,7 +284,6 @@ class Data(object):
             OOV_ids.append(np.array(oov_ids))
             OOV_size.append(np.array(len(oov_words)))
             OOV_words.append(np.array(oov_words))
-
         max_token_size = 0
         for size in SWZ:
             token_size = np.amax(np.amax(size))
@@ -291,7 +300,7 @@ class Data(object):
                 pad_stories.append(pad_token)
             padded_tokens.append(np.array(pad_stories))
 
-        return S, SZ, padded_tokens, SWZ, S_in_readable_form, OOV_ids, OOV_size, OOV_words, max_token_size
+        return S, SZ, padded_tokens, SWZ, S_in_readable_form, OOV_ids, OOV_size, OOV_words, max_token_size, SP
 
     def _vectorize_queries(self, queries, word_idx, sentence_size, char_emb_length, char_overlap):
         Q = []
@@ -395,6 +404,8 @@ class Batch(Data):
         self._unk_size = unk_size
 
         self._stories = data.stories[start:end]
+
+        self._story_positions = data.story_positions[start:end]
 
         self._queries = data.queries[start:end]
 

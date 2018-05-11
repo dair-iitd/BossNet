@@ -19,9 +19,9 @@ import json
 tf.flags.DEFINE_float("learning_rate", 0.01, "Learning rate for Adam Optimizer.")
 tf.flags.DEFINE_float("epsilon", 1e-8, "Epsilon value for Adam Optimizer.")
 tf.flags.DEFINE_float("max_grad_norm", 40.0, "Clip gradients to this norm.")
-tf.flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
+tf.flags.DEFINE_integer("batch_size", 8, "Batch size for training.")
 tf.flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
-tf.flags.DEFINE_integer("epochs", 400, "Number of epochs to train for.")
+tf.flags.DEFINE_integer("epochs", 4000, "Number of epochs to train for.")
 tf.flags.DEFINE_integer("embedding_size", 32, "Embedding size for embedding matrices.")
 tf.flags.DEFINE_integer("memory_size", 100, "Maximum size of memory.")
 tf.flags.DEFINE_integer("random_state", None, "Random state.")
@@ -30,21 +30,22 @@ tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
 tf.flags.DEFINE_boolean('word_drop', False, 'if True, uses random word dropout')
 tf.flags.DEFINE_boolean("char_emb_overlap", True, 'if False, no overlap of word character tokens during embeddings')
 tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size of encoder states')
-tf.flags.DEFINE_boolean("p_gen_loss", False, 'if True, uses additional p_gen loss during training')
+tf.flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss during training')
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
 tf.flags.DEFINE_boolean('lba', False, 'if True, uses location based addressing')
 tf.flags.DEFINE_integer("shift_size", 2, "Amount of shift allowed for Location Based Addressing")
-tf.flags.DEFINE_integer("soft_weight", 2, "Weight given to softmax function")
+tf.flags.DEFINE_integer("soft_weight", 4, "Weight given to softmax function")
 
 # Model Type
-tf.flags.DEFINE_boolean("char_emb", True, 'if True, uses character embeddings')
+tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
 tf.flags.DEFINE_boolean('pointer', True, 'if True, uses pointer network')
 tf.flags.DEFINE_boolean("hierarchy", True, "if True, uses hierarchy pointer attention")
 tf.flags.DEFINE_boolean("gated", False, "if True, uses gated memory network")
 tf.flags.DEFINE_boolean("word_softmax", True, "if True, uses gated memory network")
 tf.flags.DEFINE_boolean("line_softmax", True, "if True, uses gated memory network")
 tf.flags.DEFINE_boolean("rnn", True, "if True, uses bi-directional-rnn to encode, else Bag of Words")
+tf.flags.DEFINE_boolean("position_emb", True, "if True, uses temporal embedding for stories")
 
 # Output and Evaluation Specifications
 tf.flags.DEFINE_integer("evaluation_interval", 4, "Evaluate and print results every x epochs")
@@ -54,7 +55,7 @@ tf.flags.DEFINE_boolean("visualize", False, "if True, uses visualize_attention t
 
 # Task Type
 tf.flags.DEFINE_boolean('train', False, 'if True, begin to train')
-tf.flags.DEFINE_integer("task_id", 3, "bAbI task id, 1 <= id <= 8")
+tf.flags.DEFINE_integer("task_id", 1, "bAbI task id, 1 <= id <= 8")
 tf.flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 
 # File Locations
@@ -107,6 +108,7 @@ class chatBot(object):
 		self.word_softmax = FLAGS.word_softmax
 		self.line_softmax = FLAGS.line_softmax
 		self.soft_weight = FLAGS.soft_weight
+		self.position_emb = FLAGS.position_emb
 
 		if self.task_id == 7:
 			self.bleu_score=True
@@ -143,7 +145,8 @@ class chatBot(object):
 										   dropout=self.dropout, char_emb=self.char_emb, rnn=self.rnn,
 										   reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss,
 										   gated=self.gated, hierarchy=self.hierarchy, shift_size=self.shift_size, lba=self.lba, 
-										   word_softmax=self.word_softmax, line_softmax=self.line_softmax, soft_weight=self.soft_weight)
+										   word_softmax=self.word_softmax, line_softmax=self.line_softmax, soft_weight=self.soft_weight,
+										   position_emb=self.position_emb)
 		self.saver = tf.train.Saver(max_to_keep=4)
 
 	def build_vocab(self, data):
@@ -214,8 +217,8 @@ class chatBot(object):
 		# Train Model in Batch Mode
 		print('-----------------------')
 		for t in range(1, self.epochs + 1):
-			total_cost = self.batch_train(Data_train, batches)
-			print('Epoch', t, ' Total Cost:', total_cost)
+			total_cost = self.batch_train(Data_train, batches, t)
+			#print('Epoch', t, ' Total Cost:', total_cost)
 			
 			# Evaluate Model
 			if t % self.evaluation_interval == 0:
@@ -288,8 +291,8 @@ class chatBot(object):
 								print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
 				
 					print('-----------------------')
-				
-				sys.stdout.flush()
+
+					sys.stdout.flush()
 
 				if model_count >= 10 and self.word_drop_flag:
 					self.word_drop = True
@@ -347,15 +350,22 @@ class chatBot(object):
 	def interactive(self):
 		print("To Be Implemented")
 
-	def batch_train(self, data, batches):
+	def batch_train(self, data, batches, t):
 		'''
 			Train Model for a Batch of Input Data
 		'''
 		np.random.shuffle(batches)
 		total_cost = 0.0
+		total_seq = 0.0
+		total_pgen = 0.0
 		for i, (start, end) in enumerate(batches):
-			cost_t, logits = self.model.batch_fit(Batch(data, start, end, self.unk_size, self.word_drop))
+			#print(start, end)
+			cost_t, logits, seq_loss, pgen_loss = self.model.batch_fit(Batch(data, start, end, self.unk_size, self.word_drop))
+			total_seq += seq_loss
+			total_pgen += pgen_loss
+			#print("(", start, end, ")", cost_t, seq_loss, pgen_loss)
 			total_cost += cost_t
+		print('Epoch', t, ' Total Cost:',total_cost, '(', total_seq, '+',total_pgen, ')')
 		return total_cost
 
 	def batch_predict(self, data, n):
