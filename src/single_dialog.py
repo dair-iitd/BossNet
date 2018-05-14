@@ -27,15 +27,15 @@ tf.flags.DEFINE_integer("memory_size", 100, "Maximum size of memory.")
 tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
-tf.flags.DEFINE_boolean('word_drop', False, 'if True, uses random word dropout')
+tf.flags.DEFINE_boolean('word_drop', True, 'if True, uses random word dropout')
 tf.flags.DEFINE_boolean("char_emb_overlap", True, 'if False, no overlap of word character tokens during embeddings')
 tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size of encoder states')
-tf.flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss during training')
+tf.flags.DEFINE_boolean("p_gen_loss", False, 'if True, uses additional p_gen loss during training')
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
 tf.flags.DEFINE_boolean('lba', False, 'if True, uses location based addressing')
 tf.flags.DEFINE_integer("shift_size", 2, "Amount of shift allowed for Location Based Addressing")
-tf.flags.DEFINE_integer("soft_weight", 4, "Weight given to softmax function")
+tf.flags.DEFINE_integer("soft_weight", 8, "Weight given to softmax function")
 
 # Model Type
 tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
@@ -62,7 +62,7 @@ tf.flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 tf.flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory containing bAbI tasks")
 tf.flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 tf.flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
-tf.flags.DEFINE_string("vocab_ext", "trn", "Data Set used to build the decode vocabulary")
+tf.flags.DEFINE_string("vocab_ext", "mod", "Data Set used to build the decode vocabulary")
 
 FLAGS = tf.flags.FLAGS
 
@@ -88,7 +88,8 @@ class chatBot(object):
 		self.embedding_size = FLAGS.embedding_size
 		self.pointer = FLAGS.pointer
 		self.dropout = FLAGS.dropout
-		self.word_drop_flag = FLAGS.word_drop
+		#self.word_drop_flag = FLAGS.word_drop
+		self.word_drop = FLAGS.word_drop
 		self.unk_size = FLAGS.unk_size
 		self.bleu_score = FLAGS.bleu_score
 		self.is_train = FLAGS.train
@@ -212,7 +213,7 @@ class chatBot(object):
 
 		best_validation_accuracy = 0
 		model_count = 0
-		self.word_drop = False
+		#self.word_drop = False
 
 		# Train Model in Batch Mode
 		print('-----------------------')
@@ -294,8 +295,8 @@ class chatBot(object):
 
 					sys.stdout.flush()
 
-				if model_count >= 10 and self.word_drop_flag:
-					self.word_drop = True
+				#if model_count >= 10 and self.word_drop_flag:
+				#	self.word_drop = True
 
 	def test(self):
 		'''
@@ -381,7 +382,7 @@ class chatBot(object):
 		for start in range(0, n, self.batch_size):
 			end = start + self.batch_size
 			count += 1
-			data_batch = Batch(data, start, end)
+			data_batch = Batch(data, start, end,self.unk_size, self.word_drop)
 			if count >= n / self.batch_size:
 				break
 			if self.pointer:

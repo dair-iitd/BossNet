@@ -31,10 +31,9 @@ class Data(object):
         # Jan 6 : added answers with UNKs
         self._answers, self._answer_sizes, self._read_answers, self._answers_emb_lookup = \
             self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, self._decode_vocab_size)
-        self._decode_to_encode_db_vocab_map = self._get_decode_to_encode_db_vocab_map(self._stories_ext, self._answers_ext, word_idx, decoder_vocab)
-        self._db_values_set = self._get_db_values_set(self._stories_ext, decoder_vocab, self._oov_words)
-        self._intersection_set = self._intersection_set_mask(self._answers,self._decode_to_encode_db_vocab_map)
-
+        self._decode_to_encode_db_vocab_map, self._db_words_in_decoder_vocab, self._db_words_in_encoder_vocab = self._populate_db_vocab_structures(self._stories_ext, self._answers_ext, word_idx, decoder_vocab)
+        self._intersection_set = self._intersection_set_mask(self._answers)
+        
     @property
     def stories(self):
         return self._stories
@@ -112,10 +111,6 @@ class Data(object):
         return self._decode_vocab_size
 
     @property
-    def db_values_set(self):
-        return self._db_values_set
-
-    @property
     def token_size(self):
         return self._token_size
 
@@ -126,40 +121,45 @@ class Data(object):
     @property
     def decode_to_encode_db_vocab_map(self):
         return self._decode_to_encode_db_vocab_map
+        
+    @property
+    def db_words_in_decoder_vocab(self):
+        return self._db_words_in_decoder_vocab
 
-    def _get_db_values_set(self, stories, decoder_vocab, oov_words):
-        db_set = []
-        for i, story in enumerate(stories):
-            inv_db_values_idx = set()
-            for k, sentence in enumerate(story, 1):
-                if '$db' in sentence:
-                    for w in sentence[:-2]:
-                        if not w.startswith('r_'):
-                            if w not in decoder_vocab:
-                                idx = oov_words[i].tolist().index(w)
-                                inv_db_values_idx.add(len(decoder_vocab) + idx)
-                            else:
-                                inv_db_values_idx.add(decoder_vocab[w])
-            db_set.append(inv_db_values_idx)
-        return db_set
+    @property
+    def db_words_in_encoder_vocab(self):
+        return self._db_words_in_encoder_vocab
     
-    def _get_decode_to_encode_db_vocab_map(self, stories, answers, word_idx, decoder_vocab):
+    def _populate_db_vocab_structures(self, stories, answers, word_idx, decoder_vocab):
         decode_to_encode_db_vocab_map = {}
-        for i, story in enumerate(stories):
-            for k, sentence in enumerate(story, 1):
+        db_words_in_decoder_vocab = {}
+        db_words_in_encoder_vocab = {}
+        for _, story in enumerate(stories):
+            for _, sentence in enumerate(story, 1):
                 if '$db' in sentence:
                     for w in sentence[:-2]:
                         if not w.startswith('r_'):
                             if w in word_idx and w in decoder_vocab and decoder_vocab[w] not in decode_to_encode_db_vocab_map:
+                                
                                 decode_to_encode_db_vocab_map[decoder_vocab[w]]=word_idx[w]
+                                db_words_in_decoder_vocab[decoder_vocab[w]] = w
+                                db_words_in_encoder_vocab[word_idx[w]] = w
+
                                 #print(w + " " + str(word_idx[w]) + " " + str(decoder_vocab[w]))
-        for i,answer in enumerate(answers):
+                                
+        for _,answer in enumerate(answers):
             if 'api_call' in answer:
                 for w in answer[1:]:
                     if w in word_idx and w in decoder_vocab and decoder_vocab[w] not in decode_to_encode_db_vocab_map:
+                        
                         decode_to_encode_db_vocab_map[decoder_vocab[w]]=word_idx[w]
+                        db_words_in_decoder_vocab[decoder_vocab[w]] = w
+                        db_words_in_encoder_vocab[word_idx[w]] = w
+                        
                         #print(w + " " + str(word_idx[w]) + " " + str(decoder_vocab[w]))
-        return decode_to_encode_db_vocab_map
+        #print(db_words_in_decoder_vocab)
+        #print(db_words_in_encoder_vocab)
+        return decode_to_encode_db_vocab_map, db_words_in_decoder_vocab, db_words_in_encoder_vocab
 
 
     def _extract_data_items(self, data):
@@ -364,17 +364,17 @@ class Data(object):
 
         return A, AZ, A_in_readable_form, A_for_embeddding_lookup
 
-    def _get_input_output_intersection_vocab(self, story, query, answer):
-        input_vocab = set(list(chain.from_iterable(story.tolist())) + query.tolist())
-        output_vocab = set(answer.tolist())
-        vocab = input_vocab.intersection(output_vocab)
-        if 0 in vocab: vocab.remove(0)
-        return vocab
-
-    def _intersection_set_mask(self,answers,decode_to_encode_db_vocab_map):
+    def _intersection_set_mask(self,answers):
         mask = []
+        db_vocab = set(self._db_words_in_decoder_vocab.keys())
         for answer in answers:
-            vocab = self._get_db_output_intersection_vocab_in_decode_vocab(answer,decode_to_encode_db_vocab_map)
+            
+            vocab = set(answer).intersection(db_vocab)
+            #print(answer)
+            #for v in vocab:
+            #    print(self._db_words_in_decoder_vocab[v])
+            #print("------")
+
             dialog_mask = [1 if x in vocab else 0 for x in answer]
             mask.append(np.array(dialog_mask))
         return mask
@@ -387,16 +387,6 @@ class Data(object):
             if w in decode_to_encode_db_vocab_map:
                 vocab.add(decode_to_encode_db_vocab_map[w])
         return vocab
-    
-    # the vocab returned is in decoder vocab space
-    def _get_db_output_intersection_vocab_in_decode_vocab(self, answer, decode_to_encode_db_vocab_map):
-        output_decode_vocab = set(answer.tolist())
-        vocab = set()
-        for w in output_decode_vocab:
-            if w in decode_to_encode_db_vocab_map:
-                vocab.add(w)
-        return vocab
-
 class Batch(Data):
 
     def __init__(self, data, start, end, unk_size=0, word_drop=False):
@@ -414,8 +404,9 @@ class Batch(Data):
         # Jan 6 : added answers with UNKs
         self._answers_emb_lookup = data.answers_emb_lookup[start:end]
 
-        #if word_drop:
-        #    self._stories, self._queries = self._random_unk(self._stories, self._queries, self._answers, data.decode_to_encode_db_vocab_map)
+        if word_drop:
+            #self._stories, self._queries = self._random_unk(self._stories, self._queries, self._answers, data.decode_to_encode_db_vocab_map)
+            self._stories, self._queries = self._all_db_to_unk(self._stories, self._queries, data.db_words_in_encoder_vocab)
 
         self._story_sizes = data.story_sizes[start:end]
 
@@ -443,12 +434,9 @@ class Batch(Data):
 
         self._oov_sizes = data.oov_sizes[start:end]
 
-        self._db_values_set = data.db_values_set[start:end]
-
         self._dialog_ids = data.dialog_ids[start:end]
 
         self._intersection_set = data.intersection_set[start:end]
-
 
     # Jan 8 : randomly make a few words in the input as UNK
     def _random_unk(self, stories, queries, answers, decode_to_encode_db_vocab_map):
@@ -466,6 +454,22 @@ class Batch(Data):
             for element in sampled_words:
                 story[story == element] = UNK_INDEX
                 query[query == element] = UNK_INDEX
+            new_stories.append(story)
+            new_queries.append(query)
+
+        return new_stories, new_queries
+    
+    def _all_db_to_unk(self, stories, queries, db_words_in_encoder_vocab):
+
+        new_stories = []
+        new_queries = []
+        
+        db_words = list(db_words_in_encoder_vocab.keys())
+            
+        for story, query in zip(stories, queries):
+            for word in db_words:
+                story[story == word] = UNK_INDEX
+                query[query == word] = UNK_INDEX
             new_stories.append(story)
             new_queries.append(query)
 

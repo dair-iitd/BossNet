@@ -253,9 +253,10 @@ def substring_accuracy_score(preds, vals, word_map=None, isTrain=True):
             if word_map is not None and isTrain==False:
                 ref_surface = get_surface_form(reference, word_map)
                 hyp_surface = get_surface_form(hypothesis, word_map)
-                print('ground truth   : ' + hyp_surface)
-                print('predictions    : ' + ref_surface)
-                print('-----')
+                if is_Sublist(reference, hypothesis) == False:
+                    print('ground truth   : ' + hyp_surface)
+                    print('predictions    : ' + ref_surface)
+                    print('-----')
     return [(float(total_sub_score) / len(preds))*100, (float(total_score) / len(preds))*100]
 
 def get_tokenized_response_from_padded_vector(vector, word_map):
