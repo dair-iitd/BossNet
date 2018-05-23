@@ -19,20 +19,21 @@ class Data(object):
                  decoder_vocab, 
                  candidate_sentence_size,
                  char_emb_length,
-                 char_overlap):
+                 char_overlap,
+                 copy_first):
 
         self._decode_vocab_size = len(decoder_vocab)
         self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids = \
             self._extract_data_items(data)
-        self._stories, self._story_sizes, self._story_tokens, self._story_word_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words, self._token_size, self._story_positions = \
-            self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, self._decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap)
+        self._stories, self._story_sizes, self._story_tokens, self._story_word_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words, self._token_size, self._story_positions, self._story_vocabs = \
+            self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, self._decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap, copy_first)
         self._queries, self._query_sizes, self._query_tokens, self._query_word_sizes, self._read_queries = \
             self._vectorize_queries(self._queries_ext, word_idx, sentence_size, char_emb_length, char_overlap)
         # Jan 6 : added answers with UNKs
         self._answers, self._answer_sizes, self._read_answers, self._answers_emb_lookup = \
-            self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, self._decode_vocab_size)
+            self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, self._decode_vocab_size, copy_first)
         self._decode_to_encode_db_vocab_map, self._db_words_in_decoder_vocab, self._db_words_in_encoder_vocab = self._populate_db_vocab_structures(self._stories_ext, self._answers_ext, word_idx, decoder_vocab)
-        self._intersection_set = self._intersection_set_mask(self._answers)
+        self._intersection_set = self._intersection_set_mask(self._answers, decoder_vocab)
         
     @property
     def stories(self):
@@ -140,23 +141,24 @@ class Data(object):
                     for w in sentence[:-2]:
                         if not w.startswith('r_'):
                             if w in word_idx and w in decoder_vocab and decoder_vocab[w] not in decode_to_encode_db_vocab_map:
-                                
                                 decode_to_encode_db_vocab_map[decoder_vocab[w]]=word_idx[w]
-                                db_words_in_decoder_vocab[decoder_vocab[w]] = w
-                                db_words_in_encoder_vocab[word_idx[w]] = w
-
                                 #print(w + " " + str(word_idx[w]) + " " + str(decoder_vocab[w]))
+                            if w in word_idx:
+                                db_words_in_encoder_vocab[word_idx[w]] = w
+                            if w in decoder_vocab:
+                                db_words_in_decoder_vocab[decoder_vocab[w]] = w
                                 
         for _,answer in enumerate(answers):
             if 'api_call' in answer:
                 for w in answer[1:]:
                     if w in word_idx and w in decoder_vocab and decoder_vocab[w] not in decode_to_encode_db_vocab_map:
-                        
                         decode_to_encode_db_vocab_map[decoder_vocab[w]]=word_idx[w]
-                        db_words_in_decoder_vocab[decoder_vocab[w]] = w
-                        db_words_in_encoder_vocab[word_idx[w]] = w
-                        
                         #print(w + " " + str(word_idx[w]) + " " + str(decoder_vocab[w]))
+                    if w in word_idx:
+                        db_words_in_encoder_vocab[word_idx[w]] = w
+                    if w in decoder_vocab:
+                        db_words_in_decoder_vocab[decoder_vocab[w]] = w
+                        
         #print(db_words_in_decoder_vocab)
         #print(db_words_in_encoder_vocab)
         return decode_to_encode_db_vocab_map, db_words_in_decoder_vocab, db_words_in_encoder_vocab
@@ -205,7 +207,7 @@ class Data(object):
         return tokens
 
 
-    def _vectorize_stories(self, stories, word_idx, sentence_size, batch_size, decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap):
+    def _vectorize_stories(self, stories, word_idx, sentence_size, batch_size, decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap, copy_first):
         S = []
         SP = []
         SZ = []
@@ -215,6 +217,7 @@ class Data(object):
         OOV_ids = []
         OOV_size = []
         OOV_words = []
+        S_VOCAB = []
 
         for i, story in enumerate(stories):
             if i % batch_size == 0:
@@ -227,6 +230,7 @@ class Data(object):
             story_string = []
             oov_ids = []
             oov_words = []
+            vocab = set()
 
             # Jan 6 : changed index to k
             for k, sentence in enumerate(story, 1):
@@ -242,7 +246,13 @@ class Data(object):
                 story_string.append(story_element)
 
                 oov_sentence_ids = []
+                
+                #if copy_first:
+                #   oov_sentence_ids.append(decode_vocab_size + len(oov_words))
+                #   oov_words.append(SENTINAL_SURFACE_FORM)
+
                 for w in sentence:
+                    vocab.add(w)
                     if w not in decoder_vocab:
                         if w not in oov_words:
                             oov_sentence_ids.append(decode_vocab_size + len(oov_words))
@@ -284,6 +294,8 @@ class Data(object):
             OOV_ids.append(np.array(oov_ids))
             OOV_size.append(np.array(len(oov_words)))
             OOV_words.append(np.array(oov_words))
+            S_VOCAB.append(vocab)
+            
         max_token_size = 0
         for size in SWZ:
             token_size = np.amax(np.amax(size))
@@ -300,7 +312,7 @@ class Data(object):
                 pad_stories.append(pad_token)
             padded_tokens.append(np.array(pad_stories))
 
-        return S, SZ, padded_tokens, SWZ, S_in_readable_form, OOV_ids, OOV_size, OOV_words, max_token_size, SP
+        return S, SZ, padded_tokens, SWZ, S_in_readable_form, OOV_ids, OOV_size, OOV_words, max_token_size, SP, S_VOCAB
 
     def _vectorize_queries(self, queries, word_idx, sentence_size, char_emb_length, char_overlap):
         Q = []
@@ -333,7 +345,7 @@ class Data(object):
 
         return Q, QZ, padded_tokens, QWZ, Q_in_readable_form
 
-    def _vectorize_answers(self, answers, decoder_vocab, candidate_sentence_size, OOV_words, decode_vocab_size):
+    def _vectorize_answers(self, answers, decoder_vocab, candidate_sentence_size, OOV_words, decode_vocab_size, copy_first):
         A = []
         AZ = []
         # Jan 6 : added answers with UNKs
@@ -364,19 +376,32 @@ class Data(object):
 
         return A, AZ, A_in_readable_form, A_for_embeddding_lookup
 
-    def _intersection_set_mask(self,answers):
+    def _intersection_set_mask(self, answers, decoder_vocab):
         mask = []
+        index = 0
+
+        inv_index = {}
+        for word, idx in decoder_vocab.items():
+            inv_index[idx]=word
+
         db_vocab = set(self._db_words_in_decoder_vocab.keys())
         for answer in answers:
-            
+            '''
+            story_words = self._story_vocabs[index]
+            vocab = set()
+            for word in story_words:
+                if word in decoder_vocab:
+                    vocab.add(decoder_vocab[word])
+            '''
             vocab = set(answer).intersection(db_vocab)
             #print(answer)
             #for v in vocab:
             #    print(self._db_words_in_decoder_vocab[v])
             #print("------")
 
-            dialog_mask = [1 if x in vocab else 0 for x in answer]
+            dialog_mask = [0.0 if (x in vocab or x not in inv_index) else 1.0 for x in answer]
             mask.append(np.array(dialog_mask))
+            index+=1
         return mask
     
     # the vocab returned is in encoder vocab space
@@ -387,9 +412,10 @@ class Data(object):
             if w in decode_to_encode_db_vocab_map:
                 vocab.add(decode_to_encode_db_vocab_map[w])
         return vocab
+
 class Batch(Data):
 
-    def __init__(self, data, start, end, unk_size=0, word_drop=False):
+    def __init__(self, data, start, end, unk_size=0, word_drop=False, word_drop_prob=0.0):
 
         self._unk_size = unk_size
 
@@ -406,7 +432,7 @@ class Batch(Data):
 
         if word_drop:
             #self._stories, self._queries = self._random_unk(self._stories, self._queries, self._answers, data.decode_to_encode_db_vocab_map)
-            self._stories, self._queries = self._all_db_to_unk(self._stories, self._queries, data.db_words_in_encoder_vocab)
+            self._stories, self._queries = self._all_db_to_unk(self._stories, self._queries, data.db_words_in_encoder_vocab, word_drop_prob)
 
         self._story_sizes = data.story_sizes[start:end]
 
@@ -459,15 +485,20 @@ class Batch(Data):
 
         return new_stories, new_queries
     
-    def _all_db_to_unk(self, stories, queries, db_words_in_encoder_vocab):
+    def _all_db_to_unk(self, stories, queries, db_words_in_encoder_vocab,word_drop_prob):
 
         new_stories = []
         new_queries = []
         
         db_words = list(db_words_in_encoder_vocab.keys())
+        sampled_words=[]
+        for word in db_words:
+            sample = random.uniform(0,1)
+            if sample < word_drop_prob:
+                sampled_words.append(word)
             
         for story, query in zip(stories, queries):
-            for word in db_words:
+            for word in sampled_words:
                 story[story == word] = UNK_INDEX
                 query[query == word] = UNK_INDEX
             new_stories.append(story)

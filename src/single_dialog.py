@@ -16,10 +16,10 @@ import pdb
 import json
 
 # Model Params
-tf.flags.DEFINE_float("learning_rate", 0.01, "Learning rate for Adam Optimizer.")
+tf.flags.DEFINE_float("learning_rate", 0.005, "Learning rate for Adam Optimizer.")
 tf.flags.DEFINE_float("epsilon", 1e-8, "Epsilon value for Adam Optimizer.")
 tf.flags.DEFINE_float("max_grad_norm", 40.0, "Clip gradients to this norm.")
-tf.flags.DEFINE_integer("batch_size", 8, "Batch size for training.")
+tf.flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
 tf.flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
 tf.flags.DEFINE_integer("epochs", 4000, "Number of epochs to train for.")
 tf.flags.DEFINE_integer("embedding_size", 32, "Embedding size for embedding matrices.")
@@ -27,15 +27,17 @@ tf.flags.DEFINE_integer("memory_size", 100, "Maximum size of memory.")
 tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
-tf.flags.DEFINE_boolean('word_drop', True, 'if True, uses random word dropout')
+tf.flags.DEFINE_boolean('word_drop', True, 'if True, drop db words in story')
+tf.flags.DEFINE_float("word_drop_prob", 0.5, "value to set, if word_drop is set to True")
 tf.flags.DEFINE_boolean("char_emb_overlap", True, 'if False, no overlap of word character tokens during embeddings')
 tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size of encoder states')
-tf.flags.DEFINE_boolean("p_gen_loss", False, 'if True, uses additional p_gen loss during training')
+tf.flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss during training')
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
 tf.flags.DEFINE_boolean('lba', False, 'if True, uses location based addressing')
 tf.flags.DEFINE_integer("shift_size", 2, "Amount of shift allowed for Location Based Addressing")
 tf.flags.DEFINE_integer("soft_weight", 8, "Weight given to softmax function")
+
 
 # Model Type
 tf.flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
@@ -45,7 +47,10 @@ tf.flags.DEFINE_boolean("gated", False, "if True, uses gated memory network")
 tf.flags.DEFINE_boolean("word_softmax", True, "if True, uses gated memory network")
 tf.flags.DEFINE_boolean("line_softmax", True, "if True, uses gated memory network")
 tf.flags.DEFINE_boolean("rnn", True, "if True, uses bi-directional-rnn to encode, else Bag of Words")
-tf.flags.DEFINE_boolean("position_emb", True, "if True, uses temporal embedding for stories")
+tf.flags.DEFINE_boolean("position_emb", False, "if True, uses temporal embedding for stories")
+# not implemented yet
+tf.flags.DEFINE_boolean("copy_first", False, "copy by default, if sentinal is selected, then generate")
+
 
 # Output and Evaluation Specifications
 tf.flags.DEFINE_integer("evaluation_interval", 4, "Evaluate and print results every x epochs")
@@ -55,14 +60,14 @@ tf.flags.DEFINE_boolean("visualize", False, "if True, uses visualize_attention t
 
 # Task Type
 tf.flags.DEFINE_boolean('train', False, 'if True, begin to train')
-tf.flags.DEFINE_integer("task_id", 1, "bAbI task id, 1 <= id <= 8")
+tf.flags.DEFINE_integer("task_id", 3, "bAbI task id, 1 <= id <= 8")
 tf.flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 
 # File Locations
 tf.flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory containing bAbI tasks")
 tf.flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 tf.flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
-tf.flags.DEFINE_string("vocab_ext", "mod", "Data Set used to build the decode vocabulary")
+tf.flags.DEFINE_string("vocab_ext", "trn", "Data Set used to build the decode vocabulary")
 
 FLAGS = tf.flags.FLAGS
 
@@ -88,7 +93,7 @@ class chatBot(object):
 		self.embedding_size = FLAGS.embedding_size
 		self.pointer = FLAGS.pointer
 		self.dropout = FLAGS.dropout
-		#self.word_drop_flag = FLAGS.word_drop
+		self.word_drop_flag = FLAGS.word_drop
 		self.word_drop = FLAGS.word_drop
 		self.unk_size = FLAGS.unk_size
 		self.bleu_score = FLAGS.bleu_score
@@ -110,8 +115,10 @@ class chatBot(object):
 		self.line_softmax = FLAGS.line_softmax
 		self.soft_weight = FLAGS.soft_weight
 		self.position_emb = FLAGS.position_emb
+		self.copy_first = FLAGS.copy_first
+		self.word_drop_prob = FLAGS.word_drop_prob
 
-		if self.task_id == 7:
+		if self.task_id >= 7:
 			self.bleu_score=True
 
 		# Create Model Store Directory
@@ -134,7 +141,7 @@ class chatBot(object):
 		# self.trainDataVocab, self.testDataVocab, self.valDataVocab = load_dialog_task(self.data_dir, self.task_id, False)
 		
 		# Build vocab only with modified data
-		self.build_vocab(self.modData)
+		self.build_vocab(self.trainData)
 
 		# Define MemN2N + Generator Model
 		self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=self.epsilon)
@@ -175,20 +182,20 @@ class chatBot(object):
 		Data_train = Data(self.trainData, self.word_idx, self.sentence_size, 
 						  self.batch_size, self.memory_size, 
 						  self.decoder_vocab_to_index, self.candidate_sentence_size, 
-						  self.char_emb_length, self.char_emb_overlap)
+						  self.char_emb_length, self.char_emb_overlap, self.copy_first)
 		Data_val = Data(self.valData, self.word_idx, self.sentence_size, 
 						self.batch_size, self.memory_size, 
 						self.decoder_vocab_to_index, self.candidate_sentence_size, 
-						self.char_emb_length, self.char_emb_overlap)
+						self.char_emb_length, self.char_emb_overlap, self.copy_first)
 		Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
 						self.batch_size, self.memory_size, 
 						self.decoder_vocab_to_index, self.candidate_sentence_size, 
-						self.char_emb_length, self.char_emb_overlap)
+						self.char_emb_length, self.char_emb_overlap, self.copy_first)
 		if self.task_id < 6:
 			Data_test_OOV = Data(self.testOOVData, self.word_idx, self.sentence_size, 
 							self.batch_size, self.memory_size, 
 							self.decoder_vocab_to_index, self.candidate_sentence_size, 
-							self.char_emb_length, self.char_emb_overlap)
+							self.char_emb_length, self.char_emb_overlap, self.copy_first)
 		
 		# Create Batches
 		n_train = len(Data_train.stories)
@@ -213,15 +220,14 @@ class chatBot(object):
 
 		best_validation_accuracy = 0
 		model_count = 0
-		#self.word_drop = False
-
+		
 		# Train Model in Batch Mode
 		print('-----------------------')
 		for t in range(1, self.epochs + 1):
 			total_cost = self.batch_train(Data_train, batches, t)
 			#print('Epoch', t, ' Total Cost:', total_cost)
 			
-			# Evaluate Model
+			# Evaluate Model	
 			if t % self.evaluation_interval == 0:
 				train_accuracies = self.batch_predict(Data_train, n_train)
 				val_accuracies = self.batch_predict(Data_val, n_val)
@@ -233,10 +239,14 @@ class chatBot(object):
 						print("Train BLEU      : ", train_accuracies[2], train_accuracies[3])
 						print("Validation BLEU : ", val_accuracies[2], val_accuracies[3])
 					else:
-						print("Train Accuracy (Substring / Actual)      : ", train_accuracies[1][0], train_accuracies[1][1])
-						print("Train Accuracy + Attention               : ", train_accuracies[0][0], train_accuracies[0][1])
-						print("Validation Accuracy (Substring / Actual) : ", val_accuracies[1][0], val_accuracies[1][1])
-						print("Validation Accuracy + Attention          : ", val_accuracies[0][0], val_accuracies[0][1])
+						#print("Train Accuracy (Substring / Actual)      : ", train_accuracies[1][0], train_accuracies[1][1])
+						#print("Train Accuracy + Attention               : ", train_accuracies[0][0], train_accuracies[0][1])
+						#print("Validation Accuracy (Substring / Actual) : ", val_accuracies[1][0], val_accuracies[1][1])
+						#print("Validation Accuracy + Attention          : ", val_accuracies[0][0], val_accuracies[0][1])
+						print("Train Accuracy (Substring / Actual)      : ", train_accuracies[1][1])
+						print("Train Accuracy + Attention               : ", train_accuracies[0][1])
+						print("Validation Accuracy (Substring / Actual) : ", val_accuracies[1][1])
+						print("Validation Accuracy + Attention          : ", val_accuracies[0][1])
 				else:
 					if self.bleu_score:
 						print("Train BLEU      : ", train_accuracies[1])
@@ -268,15 +278,19 @@ class chatBot(object):
 						if self.bleu_score:
 							print("Test BLEU       : ", test_accuracies[2], test_accuracies[3])
 						else:
-							print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][0], test_accuracies[1][1])
-							print("Test Accuracy + Attention                : ", test_accuracies[0][0], test_accuracies[0][1])
-							
+							#print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][0], test_accuracies[1][1])
+							#print("Test Accuracy + Attention                : ", test_accuracies[0][0], test_accuracies[0][1])
+							print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][1])
+							print("Test Accuracy + Attention                : ", test_accuracies[0][1])
+
 						if self.task_id < 6:
 							if self.bleu_score:
 								print("Test OOV BLEU   : ", test_oov_accuracies[2], test_oov_accuracies[3])
 							else:
-								print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
-								print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+								#print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
+								#print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+								print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][1])
+								print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][1])
 							
 					else:
 						
@@ -295,9 +309,9 @@ class chatBot(object):
 
 					sys.stdout.flush()
 
-				#if model_count >= 10 and self.word_drop_flag:
-				#	self.word_drop = True
-
+				#if t >= 25 and self.word_drop_flag:
+				#	self.word_drop = False
+			
 	def test(self):
 		'''
 			Test the model
@@ -316,12 +330,12 @@ class chatBot(object):
 				Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
 							 self.batch_size, self.memory_size, 
 							 self.decoder_vocab_to_index, self.candidate_sentence_size, 
-							 self.char_emb_length, self.char_emb_overlap)
+							 self.char_emb_length, self.char_emb_overlap, self.copy_first)
 			else:
 				Data_test = Data(self.testOOVData, self.word_idx, self.sentence_size, 
 							 self.batch_size, self.memory_size, 
 							 self.decoder_vocab_to_index, self.candidate_sentence_size, 
-							 self.char_emb_length, self.char_emb_overlap)
+							 self.char_emb_length, self.char_emb_overlap, self.copy_first)
 			n_test = len(Data_test.stories)
 			print("Test Size", n_test)
 			test_accuracies = self.batch_predict(Data_test, n_test)
@@ -355,18 +369,68 @@ class chatBot(object):
 		'''
 			Train Model for a Batch of Input Data
 		'''
+		EPOCH_TO_PRINT = 5000
 		np.random.shuffle(batches)
 		total_cost = 0.0
 		total_seq = 0.0
 		total_pgen = 0.0
+
+		one_total = 0
+		one_prob_total = 0.0
+
+		zero_total = 0
+		zero_prob_total = 0.0
+
 		for i, (start, end) in enumerate(batches):
 			#print(start, end)
-			cost_t, logits, seq_loss, pgen_loss = self.model.batch_fit(Batch(data, start, end, self.unk_size, self.word_drop))
+			if self.pointer:
+				batch_entry = Batch(data, start, end, self.unk_size, self.word_drop, self.word_drop_prob)
+				cost_t, logits, seq_loss, pgen_loss, pgens = self.model.batch_fit(batch_entry)
+
+				if t == EPOCH_TO_PRINT+1:
+					sys.exit()
+
+				answers = batch_entry.answers
+				index = 0
+				for answer in answers:
+					if len(pgens) <= index or len(batch_entry._intersection_set) <= index:
+						continue
+					pgen = pgens[index]
+					gt = batch_entry._intersection_set[index]
+					word_index = 0
+					for w in answer:
+						if len(gt) <= word_index or len(pgen) <= word_index:
+							continue
+						if w in self.decoder_index_to_vocab:
+							if self.decoder_index_to_vocab[w] != "PAD":
+								if gt[word_index] == 1:
+									one_total += 1
+									one_prob_total += pgen[word_index][0]
+								else:
+									zero_total += 1
+									zero_prob_total += pgen[word_index][0]
+						else:
+							if gt[word_index] == 1:
+								one_total += 1
+								one_prob_total += pgen[word_index][0]
+							else:
+								zero_total += 1
+								zero_prob_total += pgen[word_index][0]
+						if t == EPOCH_TO_PRINT:
+							print(self.decoder_index_to_vocab[w], gt[word_index], pgen[word_index][0])
+						word_index+=1
+					index+=1
+					if t == EPOCH_TO_PRINT:
+						print("")
+			else:
+				cost_t, logits, seq_loss, pgen_loss = self.model.batch_fit(Batch(data, start, end, self.unk_size, self.word_drop, self.word_drop_prob))
 			total_seq += seq_loss
 			total_pgen += pgen_loss
 			#print("(", start, end, ")", cost_t, seq_loss, pgen_loss)
 			total_cost += cost_t
 		print('Epoch', t, ' Total Cost:',total_cost, '(', total_seq, '+',total_pgen, ')')
+		print('\t',zero_total, zero_prob_total, one_total, one_prob_total)
+		
 		return total_cost
 
 	def batch_predict(self, data, n):
@@ -380,9 +444,11 @@ class chatBot(object):
 			preds = []
 		count = 0
 		for start in range(0, n, self.batch_size):
+			
 			end = start + self.batch_size
 			count += 1
-			data_batch = Batch(data, start, end,self.unk_size, self.word_drop)
+			
+			data_batch = Batch(data, start, end,self.unk_size, False, 0)
 			if count >= n / self.batch_size:
 				break
 			if self.pointer:
@@ -398,14 +464,14 @@ class chatBot(object):
 			output = [substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train), substring_accuracy_score(old_preds, data.answers)]
 			if self.bleu_score:
 				output += [bleu_accuracy_score(old_preds, data.answers, word_map=self.decoder_index_to_vocab), bleu_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
-			if self.new_eval and (self.task_id==3 or self.task_id==5):
-				output += [new_eval_score(old_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab), new_eval_score(new_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
+			#if self.new_eval and (self.task_id==3 or self.task_id==5):
+			#	output += [new_eval_score(old_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab), new_eval_score(new_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
 		else:
 			output = [substring_accuracy_score(preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
 			if self.bleu_score:
 				output += [bleu_accuracy_score(preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
-			if self.new_eval and (self.task_id==3 or self.task_id==5):
-				output += [new_eval_score(preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
+			#if self.new_eval and (self.task_id==3 or self.task_id==5):
+			#	output += [new_eval_score(preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
 		return output
 
 	def close_session(self):

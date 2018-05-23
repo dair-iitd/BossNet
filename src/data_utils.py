@@ -37,7 +37,7 @@ EOS_INDEX = 3
 def load_candidates(data_dir, task_id):
     ''' 
         Load Candidate Responses 
-    '''
+      '''
     assert task_id > 0 and task_id < 9
     candidates=[]
     candid_dic={}

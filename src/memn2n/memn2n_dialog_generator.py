@@ -167,7 +167,7 @@ class MemN2NGeneratorDialog(object):
 		
 		# train_op 
 		if self._pointer:
-			loss_op, logits, seq_loss_op, pgen_loss_op = self._decoder_train(encoder_states, line_memory, word_memory)
+			loss_op, logits, seq_loss_op, pgen_loss_op, p_gens = self._decoder_train(encoder_states, line_memory, word_memory)
 		else:
 			loss_op, logits, seq_loss_op, pgen_loss_op = self._decoder_train(encoder_states, line_memory)
 
@@ -189,7 +189,10 @@ class MemN2NGeneratorDialog(object):
 			predict_op = self._decoder_runtime(encoder_states, line_memory)
 
 		# assign ops
-		self.loss_op = loss_op, logits, seq_loss_op, pgen_loss_op
+		if self._pointer:
+			self.loss_op = loss_op, logits, seq_loss_op, pgen_loss_op, p_gens
+		else:
+			self.loss_op = loss_op, logits, seq_loss_op, pgen_loss_op
 		self.predict_op = predict_op
 		self.train_op = train_op
 
@@ -207,7 +210,7 @@ class MemN2NGeneratorDialog(object):
 		self._story_positions = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="storie_positions")
 		self._queries = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries")
 		self._answers = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers")
-		self._intersection_mask = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="intersection_mask")
+		self._intersection_mask = tf.placeholder(tf.float32, [None, self._candidate_sentence_size], name="intersection_mask")
 		self._answers_emb_lookup = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers_emb")
 		self._sentence_sizes = tf.placeholder(tf.int32, [None, None], name="sentence_sizes")
 		self._sentence_tokens = tf.placeholder(tf.int32, [None, None, self._sentence_size, None], name="story_tokens")
@@ -517,19 +520,30 @@ class MemN2NGeneratorDialog(object):
 
 				if self._pointer and self._p_gen_loss:
 					intersect_mask = self._intersection_mask[:, :max_length]
-					p_gen_logits = tf.concat([p_gens, (1-p_gens)], 2)
-					p_gen_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=intersect_mask, logits=p_gen_logits)
+					#p_gen_logits = tf.concat([1-p_gens, 50*p_gens], 2)
+					#p_gen_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=intersect_mask, logits=p_gen_logits)
+					#pgen_loss_comp = tf.reduce_sum(p_gen_loss * target_weights)
+
+					reshaped_p_gens=tf.reshape(tf.squeeze(p_gens), [-1])
+					p = tf.reshape(intersect_mask, [-1])
+					q = tf.clip_by_value(reshaped_p_gens,1e-20,1.0)
+					one_minus_q = tf.clip_by_value(1-reshaped_p_gens,1e-20,1.0)
+					p_gen_loss = p*tf.log(q) + (1-p)*tf.log(one_minus_q)
+					pgen_loss_comp = -tf.reduce_sum(p_gen_loss * tf.reshape(target_weights, [-1]))
+
 					crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
 					seq_loss_comp = tf.reduce_sum(crossent * target_weights)
-					pgen_loss_comp = tf.reduce_sum(p_gen_loss * target_weights)
+					
 					loss = seq_loss_comp + pgen_loss_comp
+
+					return loss, final_dists, seq_loss_comp, pgen_loss_comp, p_gens
 				else:
 					crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
 					seq_loss_comp = tf.reduce_sum(crossent * target_weights)
 					pgen_loss_comp = tf.zeros_like(seq_loss_comp)
 					loss = seq_loss_comp
-
-		return loss, final_dists, seq_loss_comp, pgen_loss_comp
+	
+					return loss, final_dists, seq_loss_comp, pgen_loss_comp
 
 
 	def _decoder_runtime(self, encoder_states, line_memory, word_memory=None):
