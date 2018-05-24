@@ -28,7 +28,7 @@ tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
 tf.flags.DEFINE_boolean('word_drop', True, 'if True, drop db words in story')
-tf.flags.DEFINE_float("word_drop_prob", 0.5, "value to set, if word_drop is set to True")
+tf.flags.DEFINE_float("word_drop_prob", 0.0, "value to set, if word_drop is set to True")
 tf.flags.DEFINE_boolean("char_emb_overlap", True, 'if False, no overlap of word character tokens during embeddings')
 tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size of encoder states')
 tf.flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss during training')
@@ -77,7 +77,7 @@ class chatBot(object):
 		# Define Parameters of ChatBot
 		self.data_dir = FLAGS.data_dir
 		self.task_id = FLAGS.task_id
-		self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + "_emb-size-" + str(FLAGS.embedding_size) + "_sw-" + str(FLAGS.soft_weight) + "_model/"
+		self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + "_emb-size-" + str(FLAGS.embedding_size) + "_sw-" + str(FLAGS.soft_weight) + "_wd-" + str(FLAGS.word_drop_prob) + "_model/"
 		self.logs_dir = FLAGS.logs_dir
 		self.isInteractive = FLAGS.interactive
 		self.OOV = FLAGS.OOV
