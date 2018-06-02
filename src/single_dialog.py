@@ -440,36 +440,46 @@ class chatBot(object):
 		if self.pointer:
 			old_preds = []
 			new_preds = []
+			d_ids = []
 		else:
 			preds = []
 		count = 0
-		for start in range(0, n, self.batch_size):
+
+		batches = zip(range(0, n - self.batch_size, self.batch_size),
+					  range(self.batch_size, n, self.batch_size))
+		batches = [(start, end) for start, end in batches]
+		# fix to include last batch
+		if batches[-1][1] < n:
+			batches.append((batches[-1][1], n))
+
+		# for start in range(0, n, self.batch_size):
+		for i, (start, end) in enumerate(batches):
+			# end = start + self.batch_size
+			# count += 1
 			
-			end = start + self.batch_size
-			count += 1
-			
-			data_batch = Batch(data, start, end,self.unk_size, False, 0)
-			if count >= n / self.batch_size:
-				break
+			data_batch = Batch(data, start, end, self.unk_size, False, 0)
+			# if count >= n / self.batch_size:
+			# 	break
 			if self.pointer:
 				old_pred, new_pred, hier, line, word, p_gens = self.model.predict(data_batch)
 				old_preds += pad_to_answer_size(list(old_pred), self.candidate_sentence_size)
 				new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
+				d_ids += data_batch._dialog_ids
 				if self.visualize and count == 31:
 					visualize_attention(data_batch, hier, line, word, p_gens, count, self.hierarchy)
 			else:
 				pred = self.model.predict(data_batch)
 				preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
 		if self.pointer:
-			output = [substring_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train), substring_accuracy_score(old_preds, data.answers)]
+			output = [substring_accuracy_score(new_preds, d_ids, data.answers, word_map=self.decoder_index_to_vocab, isTrain=self.is_train), substring_accuracy_score(old_preds, d_ids, data.answers)]
 			if self.bleu_score:
-				output += [bleu_accuracy_score(old_preds, data.answers, word_map=self.decoder_index_to_vocab), bleu_accuracy_score(new_preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
-			#if self.new_eval and (self.task_id==3 or self.task_id==5):
-			#	output += [new_eval_score(old_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab), new_eval_score(new_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
+				output += [bleu_accuracy_score(old_preds, data.answers, word_map=self.decoder_index_to_vocab), bleu_accuracy_score(new_preds, data.answers, word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+			# if self.new_eval:
+			# 	output += [new_eval_score(old_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab), new_eval_score(new_preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
 		else:
-			output = [substring_accuracy_score(preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+			output = [substring_accuracy_score(preds, data.answers, word_map=self.decoder_index_to_vocab, isTrain=self.is_train)]
 			if self.bleu_score:
-				output += [bleu_accuracy_score(preds, data.answers,word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
+				output += [bleu_accuracy_score(preds, data.answers, word_map=self.decoder_index_to_vocab, isTrain=self.is_train)]
 			#if self.new_eval and (self.task_id==3 or self.task_id==5):
 			#	output += [new_eval_score(preds, data.answers, data.db_values_set, word_map=self.decoder_index_to_vocab)]
 		return output

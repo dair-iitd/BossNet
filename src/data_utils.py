@@ -238,17 +238,26 @@ def get_surface_form(index_list, word_map):
             surface_form = surface_form + " " + str(i)
     return surface_form
 
-def substring_accuracy_score(preds, vals, word_map=None, isTrain=True):
+def substring_accuracy_score(preds, d_ids, vals, word_map=None, isTrain=True):
     total_sub_score = 0.0
     total_score = 0.0
-    for pred, val in zip(preds, vals):
+    dialog_sub_dict = {}
+    dialog_dict = {}
+    for i, (pred, val) in enumerate(zip(preds, vals)):
         reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
         hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
         if is_Sublist(reference, hypothesis) == True:
             total_sub_score += 1.0 
+            if d_ids[i] not in dialog_sub_dict:
+                dialog_sub_dict[d_ids[i]] = 1
+        else:
+            dialog_sub_dict[d_ids[i]] = 0
         if reference==hypothesis:
             total_score += 1.0
+            if d_ids[i] not in dialog_dict:
+                dialog_dict[d_ids[i]] = 1
         else:
+            dialog_dict[d_ids[i]] = 0
             # print incorrect results while testing
             if word_map is not None and isTrain==False:
                 ref_surface = get_surface_form(reference, word_map)
@@ -257,7 +266,19 @@ def substring_accuracy_score(preds, vals, word_map=None, isTrain=True):
                     print('ground truth   : ' + hyp_surface)
                     print('predictions    : ' + ref_surface)
                     print('-----')
-    return [(float(total_sub_score) / len(preds))*100, (float(total_score) / len(preds))*100]
+    count = 0
+    count_sub = 0
+    count_total = 0
+    for val in dialog_dict:
+        if dialog_dict[val] == 1:
+            count += 1
+        if dialog_sub_dict[val] == 1:
+            count_sub += 1
+        count_total += 1
+    dialog_sub_accuracy = str(float(count_sub) * 100.0 / count_total)
+    dialog_accuracy = str(float(count) * 100.0 / count_total)
+    # print('dialog_accuracy   : ' + str(float(count) / count_total))
+    return [str((float(total_sub_score) / len(preds))*100) + ' (' + dialog_sub_accuracy + ')', str((float(total_score) / len(preds))*100)  + ' (' + dialog_sub_accuracy + ')']
 
 def get_tokenized_response_from_padded_vector(vector, word_map):
     tokenized_response = []
