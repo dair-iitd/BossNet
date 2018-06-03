@@ -32,8 +32,9 @@ class Data(object):
         # Jan 6 : added answers with UNKs
         self._answers, self._answer_sizes, self._read_answers, self._answers_emb_lookup = \
             self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, self._decode_vocab_size, copy_first)
-        self._decode_to_encode_db_vocab_map, self._db_words_in_decoder_vocab, self._db_words_in_encoder_vocab = self._populate_db_vocab_structures(self._stories_ext, self._answers_ext, word_idx, decoder_vocab)
+        self._decode_to_encode_db_vocab_map, self._db_words_in_decoder_vocab, self._db_words_in_encoder_vocab, self._entity_map = self._populate_db_vocab_structures(self._stories_ext, self._answers_ext, word_idx, decoder_vocab)
         self._intersection_set = self._intersection_set_mask(self._answers, decoder_vocab)
+        self._entities = self._get_entity_indecies(self._entity_map, self._read_answers)
         
     @property
     def stories(self):
@@ -130,15 +131,22 @@ class Data(object):
     @property
     def db_words_in_encoder_vocab(self):
         return self._db_words_in_encoder_vocab
+
+    @property
+    def entities(self):
+        return self._entities
     
     def _populate_db_vocab_structures(self, stories, answers, word_idx, decoder_vocab):
         decode_to_encode_db_vocab_map = {}
         db_words_in_decoder_vocab = {}
         db_words_in_encoder_vocab = {}
+        entity_map = []
         for _, story in enumerate(stories):
             for _, sentence in enumerate(story, 1):
                 if '$db' in sentence:
                     for w in sentence[:-2]:
+                        if w not in entity_map:
+                            entity_map.append(w)
                         if not w.startswith('r_'):
                             if w in word_idx and w in decoder_vocab and decoder_vocab[w] not in decode_to_encode_db_vocab_map:
                                 decode_to_encode_db_vocab_map[decoder_vocab[w]]=word_idx[w]
@@ -151,6 +159,8 @@ class Data(object):
         for _,answer in enumerate(answers):
             if 'api_call' in answer:
                 for w in answer[1:]:
+                    if w not in entity_map:
+                        entity_map.append(w)
                     if w in word_idx and w in decoder_vocab and decoder_vocab[w] not in decode_to_encode_db_vocab_map:
                         decode_to_encode_db_vocab_map[decoder_vocab[w]]=word_idx[w]
                         #print(w + " " + str(word_idx[w]) + " " + str(decoder_vocab[w]))
@@ -161,7 +171,7 @@ class Data(object):
                         
         #print(db_words_in_decoder_vocab)
         #print(db_words_in_encoder_vocab)
-        return decode_to_encode_db_vocab_map, db_words_in_decoder_vocab, db_words_in_encoder_vocab
+        return decode_to_encode_db_vocab_map, db_words_in_decoder_vocab, db_words_in_encoder_vocab, entity_map
 
 
     def _extract_data_items(self, data):
@@ -413,6 +423,16 @@ class Data(object):
                 vocab.add(decode_to_encode_db_vocab_map[w])
         return vocab
 
+    def _get_entity_indecies(self, entity_map, read_answers):
+        entities = []
+        for ans in read_answers:
+            ent = []
+            for i, word in enumerate(ans.split()):
+                if word in entity_map:
+                    ent.append(i)
+            entities.append(ent)
+        return entities
+
 class Batch(Data):
 
     def __init__(self, data, start, end, unk_size=0, word_drop=False, word_drop_prob=0.0):
@@ -463,6 +483,8 @@ class Batch(Data):
         self._dialog_ids = data.dialog_ids[start:end]
 
         self._intersection_set = data.intersection_set[start:end]
+
+        self._entities = data.entities[start:end]
 
     # Jan 8 : randomly make a few words in the input as UNK
     def _random_unk(self, stories, queries, answers, decode_to_encode_db_vocab_map):
