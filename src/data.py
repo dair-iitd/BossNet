@@ -105,6 +105,10 @@ class Data(object):
         return self._oov_sizes
 
     @property
+    def oov_words(self):
+        return self._oov_words
+
+    @property
     def dialog_ids(self):
         return self._dialog_ids
 
@@ -131,6 +135,10 @@ class Data(object):
     @property
     def db_words_in_encoder_vocab(self):
         return self._db_words_in_encoder_vocab
+
+    @property
+    def entity_words(self):
+        return self._entity_map
 
     @property
     def entities(self):
@@ -479,6 +487,8 @@ class Batch(Data):
         self._oov_ids = data.oov_ids[start:end]
 
         self._oov_sizes = data.oov_sizes[start:end]
+
+        self._oov_words = data.oov_words[start:end]
 
         self._dialog_ids = data.dialog_ids[start:end]
 

@@ -442,6 +442,7 @@ class chatBot(object):
 			new_preds = []
 			d_ids = []
 			entities = []
+			oov_words = []
 		else:
 			preds = []
 		count = 0
@@ -467,13 +468,14 @@ class chatBot(object):
 				new_preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
 				d_ids += data_batch._dialog_ids
 				entities += data_batch._entities
+				oov_words += data_batch._oov_words
 				if self.visualize and count == 31:
 					visualize_attention(data_batch, hier, line, word, p_gens, count, self.hierarchy)
 			else:
 				pred = self.model.predict(data_batch)
 				preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
 		if self.pointer:
-			output = [substring_accuracy_score(new_preds, data.answers, d_ids, entities, data._db_words_in_decoder_vocab, word_map=self.decoder_index_to_vocab, isTrain=self.is_train), substring_accuracy_score(old_preds, data.answers, d_ids, entities, data._db_words_in_decoder_vocab)]
+			output = [substring_accuracy_score(new_preds, data.answers, d_ids, entities, oov_words, data.entity_words, word_map=self.decoder_index_to_vocab, isTrain=self.is_train), substring_accuracy_score(old_preds, data.answers, d_ids, entities, oov_words, data.entity_words, word_map=self.decoder_index_to_vocab)]
 			if self.bleu_score:
 				output += [bleu_accuracy_score(old_preds, data.answers, word_map=self.decoder_index_to_vocab), bleu_accuracy_score(new_preds, data.answers, word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
 			# if self.new_eval:
