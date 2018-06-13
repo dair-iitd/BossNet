@@ -55,7 +55,7 @@ tf.flags.DEFINE_boolean("copy_first", False, "copy by default, if sentinal is se
 # Output and Evaluation Specifications
 tf.flags.DEFINE_integer("evaluation_interval", 4, "Evaluate and print results every x epochs")
 tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score to compute best model')
-tf.flags.DEFINE_boolean("new_eval", True, 'if True, uses new evaluation score')
+tf.flags.DEFINE_boolean("new_eval", False, 'if True, uses new evaluation score')
 tf.flags.DEFINE_boolean("visualize", False, "if True, uses visualize_attention tool")
 
 # Task Type

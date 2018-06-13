@@ -268,8 +268,8 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
             # print incorrect results while testing
             if word_map is not None and isTrain==False:
                 if is_Sublist(reference, hypothesis) == False:
-                    print('ground truth   : ' +  str(hyp_surface))
-                    print('predictions    : ', str(ref_surface))
+                    print('ground truth   : ' + str(hyp_surface))
+                    print('predictions    : ' + str(ref_surface))
                     print('-----')
         # print entities[i]
         for j, ref_word in enumerate(hyp_surface):
