@@ -16,6 +16,7 @@ class Data(object):
                  sentence_size, 
                  batch_size,
                  max_memory_size, 
+                 idx_word,
                  decoder_vocab, 
                  candidate_sentence_size,
                  char_emb_length,
@@ -158,6 +159,10 @@ class Data(object):
     @property
     def encoder_vocab(self):
         return self._encoder_vocab
+
+    @property
+    def idx2word(self):
+        return self.idx_word
     
     def _populate_db_vocab_structures(self, stories, answers, word_idx, decoder_vocab):
         decode_to_encode_db_vocab_map = {}
@@ -238,7 +243,6 @@ class Data(object):
                 start += size; end += size
 
         return tokens
-
 
     def _vectorize_stories(self, stories, word_idx, sentence_size, batch_size, decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap, copy_first):
         S = []
@@ -456,6 +460,16 @@ class Data(object):
             entities.append(ent)
         return entities
 
+    def _get_char_drop_tokens(self, stories, idx2word):
+        Word_tokens = []
+        for i, story in enumerate(stories):
+            tokens = []
+            for k, sentence in enumerate(story, 1):
+                word_tokens = [self._tokenize(idx2word(w), 1, True) for w in sentence]
+                tokens.append(word_tokens)
+            Word_tokens.append(tokens)
+
+
 class Batch(Data):
 
     def __init__(self, data, start, end, unk_size=0, word_drop=False, word_drop_prob=0.0):
@@ -484,14 +498,17 @@ class Batch(Data):
         self._answer_sizes = data.answer_sizes[start:end]
 
         self._story_tokens = data.story_tokens[start:end]
+        
+        self._token_size = data.token_size
+
+        if word_drop:
+            self._story_tokens = self._get_char_drop_tokens(self._stories, data.idx2word)
 
         self._query_tokens = data.query_tokens[start:end]
 
         self._story_word_sizes = data.story_word_sizes[start:end]
 
         self._query_word_sizes = data.query_word_sizes[start:end]
-
-        self._token_size = data.token_size
 
         self._read_stories = data.readable_stories[start:end]
 

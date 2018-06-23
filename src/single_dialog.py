@@ -182,20 +182,20 @@ class chatBot(object):
 		'''
 		# Get Data in usable form
 		Data_train = Data(self.trainData, self.word_idx, self.sentence_size, 
-						  self.batch_size, self.memory_size, 
+						  self.batch_size, self.memory_size, self.decoder_index_to_vocab,
 						  self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						  self.char_emb_length, self.char_emb_overlap, self.copy_first)
 		Data_val = Data(self.valData, self.word_idx, self.sentence_size, 
-						self.batch_size, self.memory_size, 
+						self.batch_size, self.memory_size, self.decoder_index_to_vocab,
 						self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						self.char_emb_length, self.char_emb_overlap, self.copy_first)
 		Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
-						self.batch_size, self.memory_size, 
+						self.batch_size, self.memory_size, self.decoder_index_to_vocab,
 						self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						self.char_emb_length, self.char_emb_overlap, self.copy_first)
 		if self.task_id < 6:
 			Data_test_OOV = Data(self.testOOVData, self.word_idx, self.sentence_size, 
-							self.batch_size, self.memory_size, 
+							self.batch_size, self.memory_size, self.decoder_index_to_vocab,
 							self.decoder_vocab_to_index, self.candidate_sentence_size, 
 							self.char_emb_length, self.char_emb_overlap, self.copy_first)
 		
@@ -331,12 +331,12 @@ class chatBot(object):
 		else:
 			if not self.OOV:
 				Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
-							 self.batch_size, self.memory_size, 
+							 self.batch_size, self.memory_size, self.decoder_index_to_vocab,
 							 self.decoder_vocab_to_index, self.candidate_sentence_size, 
 							 self.char_emb_length, self.char_emb_overlap, self.copy_first)
 			else:
 				Data_test = Data(self.testOOVData, self.word_idx, self.sentence_size, 
-							 self.batch_size, self.memory_size, 
+							 self.batch_size, self.memory_size, self.decoder_index_to_vocab,
 							 self.decoder_vocab_to_index, self.candidate_sentence_size, 
 							 self.char_emb_length, self.char_emb_overlap, self.copy_first)
 			n_test = len(Data_test.stories)
