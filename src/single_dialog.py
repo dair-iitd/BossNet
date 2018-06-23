@@ -16,13 +16,13 @@ import pdb
 import json
 
 # Model Params
-tf.flags.DEFINE_float("learning_rate", 0.005, "Learning rate for Adam Optimizer.")
+tf.flags.DEFINE_float("learning_rate", 0.0005, "Learning rate for Adam Optimizer.")
 tf.flags.DEFINE_float("epsilon", 1e-8, "Epsilon value for Adam Optimizer.")
 tf.flags.DEFINE_float("max_grad_norm", 40.0, "Clip gradients to this norm.")
 tf.flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
-tf.flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
+tf.flags.DEFINE_integer("hops", 4, "Number of hops in the Memory Network.")
 tf.flags.DEFINE_integer("epochs", 4000, "Number of epochs to train for.")
-tf.flags.DEFINE_integer("embedding_size", 32, "Embedding size for embedding matrices.")
+tf.flags.DEFINE_integer("embedding_size", 128, "Embedding size for embedding matrices.")
 tf.flags.DEFINE_integer("memory_size", 100, "Maximum size of memory.")
 tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
@@ -32,11 +32,12 @@ tf.flags.DEFINE_float("word_drop_prob", 0.0, "value to set, if word_drop is set 
 tf.flags.DEFINE_boolean("char_emb_overlap", True, 'if False, no overlap of word character tokens during embeddings')
 tf.flags.DEFINE_boolean("reduce_states", False, 'if True, reduces embedding size of encoder states')
 tf.flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss during training')
+tf.flags.DEFINE_float("p_gen_loss_weight", 0.75, 'relative weight to p_gen loss, > 1 gives more weight to p_gen loss')
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
 tf.flags.DEFINE_boolean('lba', False, 'if True, uses location based addressing')
 tf.flags.DEFINE_integer("shift_size", 2, "Amount of shift allowed for Location Based Addressing")
-tf.flags.DEFINE_integer("soft_weight", 8, "Weight given to softmax function")
+tf.flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
 
 
 # Model Type
@@ -53,14 +54,14 @@ tf.flags.DEFINE_boolean("copy_first", False, "copy by default, if sentinal is se
 
 
 # Output and Evaluation Specifications
-tf.flags.DEFINE_integer("evaluation_interval", 4, "Evaluate and print results every x epochs")
-tf.flags.DEFINE_boolean("bleu_score", False, 'if True, uses BLUE word score to compute best model')
+tf.flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every x epochs")
+tf.flags.DEFINE_boolean("bleu_score", True, 'if True, uses BLUE word score to compute best model')
 tf.flags.DEFINE_boolean("new_eval", False, 'if True, uses new evaluation score')
 tf.flags.DEFINE_boolean("visualize", False, "if True, uses visualize_attention tool")
 
 # Task Type
 tf.flags.DEFINE_boolean('train', False, 'if True, begin to train')
-tf.flags.DEFINE_integer("task_id", 3, "bAbI task id, 1 <= id <= 8")
+tf.flags.DEFINE_integer("task_id", 6, "bAbI task id, 1 <= id <= 8")
 tf.flags.DEFINE_boolean('OOV', False, 'if True, use OOV test set')
 
 # File Locations
@@ -77,7 +78,7 @@ class chatBot(object):
 		# Define Parameters of ChatBot
 		self.data_dir = FLAGS.data_dir
 		self.task_id = FLAGS.task_id
-		self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + "_emb-size-" + str(FLAGS.embedding_size) + "_sw-" + str(FLAGS.soft_weight) + "_wd-" + str(FLAGS.word_drop_prob) + "_model/"
+		self.model_dir = FLAGS.model_dir + "task" + str(FLAGS.task_id) + "_" + FLAGS.data_dir.split('/')[-2] + "_lr-" + str(FLAGS.learning_rate) + "_hops-" + str(FLAGS.hops) + "_emb-size-" + str(FLAGS.embedding_size) + "_sw-" + str(FLAGS.soft_weight) + "_wd-" + str(FLAGS.word_drop_prob) + "_pw-" + str(FLAGS.p_gen_loss_weight) + "_model/"
 		self.logs_dir = FLAGS.logs_dir
 		self.isInteractive = FLAGS.interactive
 		self.OOV = FLAGS.OOV
@@ -117,6 +118,7 @@ class chatBot(object):
 		self.position_emb = FLAGS.position_emb
 		self.copy_first = FLAGS.copy_first
 		self.word_drop_prob = FLAGS.word_drop_prob
+		self.p_gen_loss_weight = FLAGS.p_gen_loss_weight
 
 		if self.task_id >= 7:
 			self.bleu_score=True
@@ -154,7 +156,7 @@ class chatBot(object):
 										   reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss,
 										   gated=self.gated, hierarchy=self.hierarchy, shift_size=self.shift_size, lba=self.lba, 
 										   word_softmax=self.word_softmax, line_softmax=self.line_softmax, soft_weight=self.soft_weight,
-										   position_emb=self.position_emb)
+										   position_emb=self.position_emb, p_gen_loss_weight=self.p_gen_loss_weight)
 		self.saver = tf.train.Saver(max_to_keep=4)
 
 	def build_vocab(self, data):
@@ -260,15 +262,16 @@ class chatBot(object):
 				# Save best model
 
 				val_score = val_accuracies[0][1]
+				val_to_compare = float(val_score.split()[0])
 				if self.bleu_score:
 					idx = 1
 					if self.pointer:
 						idx = 2
-					val_score = val_accuracies[idx]
+					val_to_compare = val_accuracies[idx]
 					
-				if val_score >= best_validation_accuracy:
+				if val_to_compare >= best_validation_accuracy:
 					model_count += 1
-					best_validation_accuracy = val_score
+					best_validation_accuracy = val_to_compare
 					self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
 					test_accuracies = self.batch_predict(Data_test, n_test)
 					if self.task_id < 6:
@@ -278,19 +281,19 @@ class chatBot(object):
 						if self.bleu_score:
 							print("Test BLEU       : ", test_accuracies[2], test_accuracies[3])
 						else:
-							#print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][0], test_accuracies[1][1])
-							#print("Test Accuracy + Attention                : ", test_accuracies[0][0], test_accuracies[0][1])
-							print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][1])
-							print("Test Accuracy + Attention                : ", test_accuracies[0][1])
+							print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][0], test_accuracies[1][1])
+							print("Test Accuracy + Attention                : ", test_accuracies[0][0], test_accuracies[0][1])
+							#print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][1])
+							#print("Test Accuracy + Attention                : ", test_accuracies[0][1])
 
 						if self.task_id < 6:
 							if self.bleu_score:
 								print("Test OOV BLEU   : ", test_oov_accuracies[2], test_oov_accuracies[3])
 							else:
-								#print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
-								#print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
-								print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][1])
-								print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][1])
+								print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
+								print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+								#print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][1])
+								#print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][1])
 							
 					else:
 						
@@ -347,7 +350,7 @@ class chatBot(object):
 				idx1 = 2; idx2 = 3   
 				if self.bleu_score:
 					print('Test Bleu Score:', test_accuracies[idx1], test_accuracies[idx2])
-					idx += 2; idx2 += 2
+					idx1 += 2; idx2 += 2
 				if self.new_eval and (self.task_id==3 or self.task_id==5):
 					print('Restaurant Recommendation Accuracy : ', test_accuracies[idx1][0], test_accuracies[idx2][0])
 					print('Restaurant Recommendation from DB Accuracy : ', test_accuracies[idx1][1], test_accuracies[idx2][1])

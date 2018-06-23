@@ -23,6 +23,12 @@ class Data(object):
                  copy_first):
 
         self._decode_vocab_size = len(decoder_vocab)
+        self._encoder_vocab = word_idx.keys()
+        if '$db' in word_idx:
+            self._db_vocab_id = word_idx['$db']
+        else:
+            self._db_vocab_id = -1
+        
         self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids = \
             self._extract_data_items(data)
         self._stories, self._story_sizes, self._story_tokens, self._story_word_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words, self._token_size, self._story_positions, self._story_vocabs = \
@@ -35,6 +41,7 @@ class Data(object):
         self._decode_to_encode_db_vocab_map, self._db_words_in_decoder_vocab, self._db_words_in_encoder_vocab, self._entity_map = self._populate_db_vocab_structures(self._stories_ext, self._answers_ext, word_idx, decoder_vocab)
         self._intersection_set = self._intersection_set_mask(self._answers, decoder_vocab)
         self._entities = self._get_entity_indecies(self._entity_map, self._read_answers)
+
         
     @property
     def stories(self):
@@ -143,6 +150,14 @@ class Data(object):
     @property
     def entities(self):
         return self._entities
+
+    @property
+    def db_vocab_id(self):
+        return self._db_vocab_id
+
+    @property
+    def encoder_vocab(self):
+        return self._encoder_vocab
     
     def _populate_db_vocab_structures(self, stories, answers, word_idx, decoder_vocab):
         decode_to_encode_db_vocab_map = {}
@@ -430,7 +445,7 @@ class Data(object):
             if w in decode_to_encode_db_vocab_map:
                 vocab.add(decode_to_encode_db_vocab_map[w])
         return vocab
-
+    
     def _get_entity_indecies(self, entity_map, read_answers):
         entities = []
         for ans in read_answers:
@@ -459,8 +474,8 @@ class Batch(Data):
         self._answers_emb_lookup = data.answers_emb_lookup[start:end]
 
         if word_drop:
-            #self._stories, self._queries = self._random_unk(self._stories, self._queries, self._answers, data.decode_to_encode_db_vocab_map)
-            self._stories, self._queries = self._all_db_to_unk(self._stories, self._queries, data.db_words_in_encoder_vocab, word_drop_prob)
+            #self._stories, self._queries = self._random_unk(self._stories, self._queries, self._answers, data.encoder_vocab)
+            self._stories, self._queries = self._all_db_to_unk(self._stories, self._queries, data.db_vocab_id, data.db_words_in_encoder_vocab, word_drop_prob)
 
         self._story_sizes = data.story_sizes[start:end]
 
@@ -497,18 +512,17 @@ class Batch(Data):
         self._entities = data.entities[start:end]
 
     # Jan 8 : randomly make a few words in the input as UNK
-    def _random_unk(self, stories, queries, answers, decode_to_encode_db_vocab_map):
+    def _random_unk(self, stories, queries, answers, encoder_vocab):
 
         new_stories = []
         new_queries = []
         
         for story, query, answer in zip(stories, queries, answers):
-            db_output_vocab = self._get_db_output_intersection_vocab(answer,decode_to_encode_db_vocab_map)
             coin_toss = random.randint(0,1)
-            if coin_toss == 0 or len(db_output_vocab) == 0:
+            if coin_toss == 0:
                 sampled_words = []
             else:
-                sampled_words = list(db_output_vocab)
+                sampled_words = list(encoder_vocab)
             for element in sampled_words:
                 story[story == element] = UNK_INDEX
                 query[query == element] = UNK_INDEX
@@ -517,23 +531,23 @@ class Batch(Data):
 
         return new_stories, new_queries
     
-    def _all_db_to_unk(self, stories, queries, db_words_in_encoder_vocab,word_drop_prob):
+    def _all_db_to_unk(self, stories, queries, db_vocab_id, db_words_in_encoder_vocab,word_drop_prob):
 
         new_stories = []
         new_queries = []
         
         db_words = list(db_words_in_encoder_vocab.keys())
-        sampled_words=[]
-        for word in db_words:
-            sample = random.uniform(0,1)
-            if sample < word_drop_prob:
-                sampled_words.append(word)
-            
+        
         for story, query in zip(stories, queries):
-            for word in sampled_words:
-                story[story == word] = UNK_INDEX
-                query[query == word] = UNK_INDEX
-            new_stories.append(story)
+            new_story = story.copy()
+            for i in range(new_story.shape[0]):
+                if db_vocab_id not in new_story[i]:
+                    for j in range(new_story.shape[1]):
+                        if new_story[i][j] in db_words:
+                            sample = random.uniform(0,1)
+                            if sample < word_drop_prob:
+                                new_story[i][j] = UNK_INDEX
+            new_stories.append(new_story)
             new_queries.append(query)
 
         return new_stories, new_queries

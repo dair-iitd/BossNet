@@ -78,7 +78,8 @@ class MemN2NGeneratorDialog(object):
 				 word_softmax=False,
 				 line_softmax=False,
 				 soft_weight=False,
-				 position_emb=False):
+				 position_emb=False,
+				 p_gen_loss_weight=1.0):
 
 		"""Creates an End-To-End Memory Network
 
@@ -143,6 +144,7 @@ class MemN2NGeneratorDialog(object):
 		self._line_softmax = line_softmax
 		self._soft_weight = soft_weight
 		self._position_emb = position_emb
+		self._p_gen_loss_weight = p_gen_loss_weight
 
 		# add unk and eos
 		self.UNK = decoder_vocab_to_index["UNK"]
@@ -534,7 +536,7 @@ class MemN2NGeneratorDialog(object):
 					crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
 					seq_loss_comp = tf.reduce_sum(crossent * target_weights)
 					
-					loss = seq_loss_comp + pgen_loss_comp
+					loss = seq_loss_comp + self._p_gen_loss_weight*pgen_loss_comp
 
 					return loss, final_dists, seq_loss_comp, pgen_loss_comp, p_gens
 				else:
