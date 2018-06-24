@@ -461,16 +461,6 @@ class Data(object):
             entities.append(ent)
         return entities
 
-    def _get_char_drop_tokens(self, stories, idx2word):
-        Word_tokens = []
-        for i, story in enumerate(stories):
-            tokens = []
-            for k, sentence in enumerate(story, 1):
-                word_tokens = [self._tokenize(idx2word[w], 1, True) for w in sentence]
-                tokens.append(word_tokens)
-            Word_tokens.append(tokens)
-
-
 class Batch(Data):
 
     def __init__(self, data, start, end, unk_size=0, word_drop=False, word_drop_prob=0.0):
@@ -528,6 +518,27 @@ class Batch(Data):
         self._intersection_set = data.intersection_set[start:end]
 
         self._entities = data.entities[start:end]
+
+    def _get_char_drop_tokens(self, stories, idx2word):
+        Word_tokens = []
+        for i, story in enumerate(stories):
+            tokens = []
+            for k, sentence in enumerate(story, 1):
+                word_tokens = [self._tokenize(idx2word[w], 1, True) for w in sentence]
+                tokens.append(word_tokens)
+            Word_tokens.append(tokens)
+
+        padded_tokens = []
+        for story in Word_tokens:
+            pad_stories = []
+            for token in story:
+                pad_token = []
+                for token_list in token:
+                    token_list = token_list + [0]*(self._token_size - len(token_list))
+                    pad_token.append(token_list)
+                pad_stories.append(pad_token)
+            padded_tokens.append(np.array(pad_stories))
+        return padded_tokens
 
     # Jan 8 : randomly make a few words in the input as UNK
     def _random_unk(self, stories, queries, answers, encoder_vocab):
