@@ -167,6 +167,7 @@ class chatBot(object):
 		vocab = sorted(vocab)
 		# Jan 6 : UNK was missing in train
 		self.word_idx = dict((c, i + 2) for i, c in enumerate(vocab))
+		self.word_idx['']=0
 		self.word_idx['UNK']=1
 		max_story_size = max(map(len, (s for s, _, _, _ in data)))
 		self.sentence_size = max(map(len, chain.from_iterable(s for s, _, _, _ in data)))
@@ -174,6 +175,7 @@ class chatBot(object):
 		self.memory_size = min(self.memory_size, max_story_size)
 		self.vocab_size = len(self.word_idx) + 1  # +1 for nil word
 		self.sentence_size = max(query_size, self.sentence_size)
+		self.idx_word = {v: k for k, v in self.word_idx.iteritems()}
 		print("Input Vocab Size   : ", self.vocab_size)
 
 	def train(self):
@@ -181,21 +183,21 @@ class chatBot(object):
 			Train the model
 		'''
 		# Get Data in usable form
-		Data_train = Data(self.trainData, self.word_idx, self.sentence_size, 
-						  self.batch_size, self.memory_size, self.decoder_index_to_vocab,
+		Data_train = Data(self.trainData, self.word_idx, self.idx_word, self.sentence_size, 
+						  self.batch_size, self.memory_size,
 						  self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						  self.char_emb_length, self.char_emb_overlap, self.copy_first)
-		Data_val = Data(self.valData, self.word_idx, self.sentence_size, 
-						self.batch_size, self.memory_size, self.decoder_index_to_vocab,
+		Data_val = Data(self.valData, self.word_idx, self.idx_word, self.sentence_size, 
+						self.batch_size, self.memory_size,
 						self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						self.char_emb_length, self.char_emb_overlap, self.copy_first)
-		Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
-						self.batch_size, self.memory_size, self.decoder_index_to_vocab,
+		Data_test = Data(self.testData, self.word_idx, self.idx_word, self.sentence_size, 
+						self.batch_size, self.memory_size, 
 						self.decoder_vocab_to_index, self.candidate_sentence_size, 
 						self.char_emb_length, self.char_emb_overlap, self.copy_first)
 		if self.task_id < 6:
-			Data_test_OOV = Data(self.testOOVData, self.word_idx, self.sentence_size, 
-							self.batch_size, self.memory_size, self.decoder_index_to_vocab,
+			Data_test_OOV = Data(self.testOOVData, self.word_idx, self.idx_word, self.sentence_size, 
+							self.batch_size, self.memory_size,
 							self.decoder_vocab_to_index, self.candidate_sentence_size, 
 							self.char_emb_length, self.char_emb_overlap, self.copy_first)
 		
@@ -330,13 +332,13 @@ class chatBot(object):
 			self.interactive()
 		else:
 			if not self.OOV:
-				Data_test = Data(self.testData, self.word_idx, self.sentence_size, 
-							 self.batch_size, self.memory_size, self.decoder_index_to_vocab,
+				Data_test = Data(self.testData, self.word_idx, self.idx_word, self.sentence_size, 
+							 self.batch_size, self.memory_size, 
 							 self.decoder_vocab_to_index, self.candidate_sentence_size, 
 							 self.char_emb_length, self.char_emb_overlap, self.copy_first)
 			else:
-				Data_test = Data(self.testOOVData, self.word_idx, self.sentence_size, 
-							 self.batch_size, self.memory_size, self.decoder_index_to_vocab,
+				Data_test = Data(self.testOOVData, self.word_idx, self.idx_word, self.sentence_size, 
+							 self.batch_size, self.memory_size,
 							 self.decoder_vocab_to_index, self.candidate_sentence_size, 
 							 self.char_emb_length, self.char_emb_overlap, self.copy_first)
 			n_test = len(Data_test.stories)

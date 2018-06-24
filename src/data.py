@@ -13,10 +13,10 @@ class Data(object):
     def __init__(self,
                  data, 
                  word_idx, 
+                 idx_word,
                  sentence_size, 
                  batch_size,
                  max_memory_size, 
-                 idx_word,
                  decoder_vocab, 
                  candidate_sentence_size,
                  char_emb_length,
@@ -25,6 +25,7 @@ class Data(object):
 
         self._decode_vocab_size = len(decoder_vocab)
         self._encoder_vocab = word_idx.keys()
+        self._idx_word = idx_word
         if '$db' in word_idx:
             self._db_vocab_id = word_idx['$db']
         else:
@@ -162,7 +163,7 @@ class Data(object):
 
     @property
     def idx2word(self):
-        return self.idx_word
+        return self._idx_word
     
     def _populate_db_vocab_structures(self, stories, answers, word_idx, decoder_vocab):
         decode_to_encode_db_vocab_map = {}
@@ -465,7 +466,7 @@ class Data(object):
         for i, story in enumerate(stories):
             tokens = []
             for k, sentence in enumerate(story, 1):
-                word_tokens = [self._tokenize(idx2word(w), 1, True) for w in sentence]
+                word_tokens = [self._tokenize(idx2word[w], 1, True) for w in sentence]
                 tokens.append(word_tokens)
             Word_tokens.append(tokens)
 
