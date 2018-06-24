@@ -175,7 +175,7 @@ class chatBot(object):
 		self.memory_size = min(self.memory_size, max_story_size)
 		self.vocab_size = len(self.word_idx) + 1  # +1 for nil word
 		self.sentence_size = max(query_size, self.sentence_size)
-		self.idx_word = {v: k for k, v in self.word_idx.iteritems()}
+		self.idx_word = {v: k for k, v in self.word_idx.items()}
 		print("Input Vocab Size   : ", self.vocab_size)
 
 	def train(self):
