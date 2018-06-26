@@ -120,8 +120,8 @@ class chatBot(object):
 		self.word_drop_prob = FLAGS.word_drop_prob
 		self.p_gen_loss_weight = FLAGS.p_gen_loss_weight
 
-		# if self.task_id >= 7:
-		self.bleu_score=True
+		if self.task_id >= 6:
+			self.bleu_score=True
 
 		# Create Model Store Directory
 		if not os.path.exists(self.model_dir):
