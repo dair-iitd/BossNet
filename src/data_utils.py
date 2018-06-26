@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 import os
 import re
+from measures import moses_multi_bleu
 import numpy as np
 import tensorflow as tf
 from nltk.translate.bleu_score import corpus_bleu
@@ -271,7 +272,6 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
                     print('ground truth   : ' + str(hyp_surface))
                     print('predictions    : ' + str(ref_surface))
                     print('-----')
-        # print entities[i]
         for j, ref_word in enumerate(hyp_surface):
             if j >= len(ref_surface):
                 pred_word = 'NULL'
@@ -312,23 +312,22 @@ def get_tokenized_response_from_padded_vector(vector, word_map):
     tokenized_response = []
     for x in vector:
         if x == EOS_INDEX or x == PAD_INDEX:
-            return tokenized_response
+            return ' '.join(tokenized_response)
         if x in word_map:
             tokenized_response.append(word_map[x])
         else:
             tokenized_response.append('UNK')
-    return tokenized_response
+    return ' '.join(tokenized_response)
 
 def bleu_accuracy_score(preds, refs, word_map=None, isTrain=True):
-    
     references = []
     hypothesis = []
     
     for pred, ref in zip(preds, refs):
-        references.append([get_tokenized_response_from_padded_vector(ref, word_map)])
+        references.append(get_tokenized_response_from_padded_vector(ref, word_map))
         hypothesis.append(get_tokenized_response_from_padded_vector(pred, word_map))
         
-    return corpus_bleu(references, hypothesis)
+    return moses_multi_bleu(hypothesis, references, True)
 
 def new_eval_score(preds, vals, dbset, word_map=None):
     match=0
