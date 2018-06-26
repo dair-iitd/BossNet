@@ -242,22 +242,20 @@ class chatBot(object):
 					if self.bleu_score:
 						print("Train BLEU      : ", train_accuracies[2], train_accuracies[3])
 						print("Validation BLEU : ", val_accuracies[2], val_accuracies[3])
-					else:
-						#print("Train Accuracy (Substring / Actual)      : ", train_accuracies[1][0], train_accuracies[1][1])
-						#print("Train Accuracy + Attention               : ", train_accuracies[0][0], train_accuracies[0][1])
-						#print("Validation Accuracy (Substring / Actual) : ", val_accuracies[1][0], val_accuracies[1][1])
-						#print("Validation Accuracy + Attention          : ", val_accuracies[0][0], val_accuracies[0][1])
-						print("Train Accuracy (Substring / Actual)      : ", train_accuracies[1][1])
-						print("Train Accuracy + Attention               : ", train_accuracies[0][1])
-						print("Validation Accuracy (Substring / Actual) : ", val_accuracies[1][1])
-						print("Validation Accuracy + Attention          : ", val_accuracies[0][1])
+					#print("Train Accuracy (Substring / Actual)      : ", train_accuracies[1][0], train_accuracies[1][1])
+					#print("Train Accuracy + Attention               : ", train_accuracies[0][0], train_accuracies[0][1])
+					#print("Validation Accuracy (Substring / Actual) : ", val_accuracies[1][0], val_accuracies[1][1])
+					#print("Validation Accuracy + Attention          : ", val_accuracies[0][0], val_accuracies[0][1])
+					print("Train Accuracy (Substring / Actual)      : ", train_accuracies[1][1])
+					print("Train Accuracy + Attention               : ", train_accuracies[0][1])
+					print("Validation Accuracy (Substring / Actual) : ", val_accuracies[1][1])
+					print("Validation Accuracy + Attention          : ", val_accuracies[0][1])
 				else:
 					if self.bleu_score:
 						print("Train BLEU      : ", train_accuracies[1])
 						print("Validation BLEU : ", val_accuracies[1])
-					else:
-						print("Train Accuracy (Substring / Actual)      : ", train_accuracies[0][0], train_accuracies[0][1])
-						print("Validation Accuracy (Substring / Actual) : ", val_accuracies[0][0], val_accuracies[0][1])
+					print("Train Accuracy (Substring / Actual)      : ", train_accuracies[0][0], train_accuracies[0][1])
+					print("Validation Accuracy (Substring / Actual) : ", val_accuracies[0][0], val_accuracies[0][1])
 				print('-----------------------')
 				sys.stdout.flush()
 				
@@ -282,33 +280,29 @@ class chatBot(object):
 						
 						if self.bleu_score:
 							print("Test BLEU       : ", test_accuracies[2], test_accuracies[3])
-						else:
-							print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][0], test_accuracies[1][1])
-							print("Test Accuracy + Attention                : ", test_accuracies[0][0], test_accuracies[0][1])
-							#print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][1])
-							#print("Test Accuracy + Attention                : ", test_accuracies[0][1])
+						print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][0], test_accuracies[1][1])
+						print("Test Accuracy + Attention                : ", test_accuracies[0][0], test_accuracies[0][1])
+						#print("Test Accuracy (Substring / Actual)       : ", test_accuracies[1][1])
+						#print("Test Accuracy + Attention                : ", test_accuracies[0][1])
 
 						if self.task_id < 6:
 							if self.bleu_score:
 								print("Test OOV BLEU   : ", test_oov_accuracies[2], test_oov_accuracies[3])
-							else:
-								print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
-								print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
-								#print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][1])
-								#print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][1])
+							print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][0], test_oov_accuracies[1][1])
+							print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+							#print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[1][1])
+							#print("Test OOV Accuracy + Attention            : ", test_oov_accuracies[0][1])
 							
 					else:
 						
 						if self.bleu_score:
 							print("Test BLEU       : ", test_accuracies[1])
-						else:
-							print("Test Accuracy (Substring / Actual)       : ", test_accuracies[0][0], test_accuracies[0][1])
+						print("Test Accuracy (Substring / Actual)       : ", test_accuracies[0][0], test_accuracies[0][1])
 							
 						if self.task_id < 6:
 							if self.bleu_score:
 								print("Test OOV BLEU   : ", test_accuracies[1])
-							else:
-								print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
+							print("Test OOV Accuracy (Substring / Actual)   : ", test_oov_accuracies[0][0], test_oov_accuracies[0][1])
 				
 					print('-----------------------')
 
