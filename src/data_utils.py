@@ -2,6 +2,8 @@ from __future__ import absolute_import
 
 import os
 import re
+import json
+import sys
 from measures import moses_multi_bleu
 import numpy as np
 import tensorflow as tf
@@ -252,6 +254,8 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
     entity_score = 0.0
     re = []
     pr = []
+    out_actuals = {}
+    out_preds = {}
     for i, (pred, val) in enumerate(zip(preds, vals)):
         reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
         hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
@@ -275,6 +279,9 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
             #         print('ground truth   : ' + str(hyp_surface))
             #         print('predictions    : ' + str(ref_surface))
             #         print('-----')
+        dict_size = len(out_actuals)
+        out_actuals[dict_size] = hyp_surface
+        out_preds[dict_size] = ref_surface
         lst = []
         re_temp = []
         pr_temp = []
@@ -326,6 +333,10 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
         count_total += 1.0
     dialog_sub_accuracy = str(float(count_sub) * 100.0 / count_total)
     dialog_accuracy = str(float(count) * 100.0 / count_total)
+    with open('actuals_sys.txt', 'w') as f:
+        json.dump(out_actuals, f)
+    with open('preds_sys.txt', 'w') as f:
+        json.dump(out_preds, f)
     return [str((float(total_sub_score) / len(preds))*100) + ' (' + dialog_sub_accuracy + ')', str((float(total_score) / len(preds))*100)  + ' (' + dialog_accuracy + ')' + ' (' + macro_f1_score + ')' + ' (' + new_f1 + ')']
 
 def get_tokenized_response_from_padded_vector(vector, word_map):
@@ -376,12 +387,14 @@ def new_eval_score(preds, vals, dbset, word_map=None):
 def visualize_attention(data_batch, hier, line, word, p_gens, count, hierarchy):
     hier = hier.reshape(word.shape)
     answers = data_batch.readable_answers
+    pred_index = 8
     for i, ans in enumerate(answers):
         if ':' in ans:
-            lst_hier = hier[i][8]
-            lst_word = word[i][8]
-            lst_line = line[i][8]
-            lst_pgen = p_gens[i][8]
+            print ans
+            lst_hier = hier[i][pred_index]
+            lst_word = word[i][pred_index]
+            lst_line = line[i][pred_index]
+            lst_pgen = p_gens[i][pred_index]
             lst_line = lst_line.reshape((lst_line.shape[0], 1))
             words = np.copy(data_batch.readable_stories[i])
             sizes = data_batch.story_sizes[i]
@@ -401,8 +414,13 @@ def visualize_attention(data_batch, hier, line, word, p_gens, count, hierarchy):
                             index = j
             indexes = list(range(0, lst_hier.shape[0]))
             n_indexes = indexes[:index+1] + indexes[-5:]
+            # n_indexes = indexes
             lst_hier = lst_hier[n_indexes]
             lst_line = lst_line[n_indexes]
+            print (lst_hier)
+            # lst_hier = lst_hier / lst_line[0][:,None]
+            # lst_hier = np.log(lst_hier)
+            print (lst_hier)
             words = words[n_indexes]
             sizes = sizes[n_indexes]
             size = np.max(sizes)
@@ -425,14 +443,14 @@ def visualize_attention(data_batch, hier, line, word, p_gens, count, hierarchy):
             plt.subplot(gs[1])
             sns.set_context("paper")
             print('shape', lst_hier[:, :size-2].shape)
-            ax = sns.heatmap(lst_hier[:, :size-2], fmt='s', linewidths=2, cmap='hot', annot=words[:, :size-2], mask=(lst_hier[:, :size-2]==0.0), vmin=minval, vmax=maxval*1.1, yticklabels=False, xticklabels=False)
+            ax = sns.heatmap(lst_hier[:, :size], fmt='s', linewidths=2, cmap='hot', annot=words[:, :size], mask=(lst_hier[:, :size]==0.0), vmin=minval, vmax=maxval*1.1, yticklabels=False, xticklabels=False)
             plt.tight_layout()
             
             if hierarchy:
-                plt.savefig('hier_plots/' + str(count) + '_' + str(i) + '_' + str(8) + '_' + str(lst_pgen) + '_' + "att.png")
+                plt.savefig('hier_plots/' + str(count) + '_' + str(i) + '_' + str(pred_index) + '_' + str(lst_pgen) + '_' + "att.png")
             else:
-                plt.savefig('no_hier_plots/' + str(count) + '_' + str(i) + '_' + str(8) + '_' + str(lst_pgen) + '_' + "att.png")
-    sys.exit()
+                plt.savefig('no_hier_plots/' + str(count) + '_' + str(i) + '_' + str(pred_index) + '_' + str(lst_pgen) + '_' + "att.png")
+            # sys.exit()
 
 
 
