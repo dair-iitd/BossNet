@@ -10,6 +10,7 @@ from string import punctuation
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
+from sklearn.metrics import f1_score
 
 __all__ =  ["load_candidates", 
             "get_decoder_vocab", 
@@ -131,7 +132,7 @@ def tokenize(sent):
     sent=sent.lower()
     if sent=='<silence>':
         return [sent]
-    result=[x.strip() for x in re.split('(\W+)?', sent) if x.strip() and x.strip() not in stop_words]
+    result=[x.strip() for x in re.split('(\W+)?', sent) if x.strip()] # and x.strip() not in stop_words]
     if not result:
         result=['<silence>']
     if result[-1]=='.' or result[-1]=='?' or result[-1]=='!':
@@ -249,6 +250,8 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
     precision_total = 0.0
     recall_total = 0.0
     entity_score = 0.0
+    re = []
+    pr = []
     for i, (pred, val) in enumerate(zip(preds, vals)):
         reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
         hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
@@ -267,11 +270,27 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
         else:
             dialog_dict[d_ids[i]] = 0
             # print incorrect results while testing
-            if word_map is not None and isTrain==False:
-                if is_Sublist(reference, hypothesis) == False:
-                    print('ground truth   : ' + str(hyp_surface))
-                    print('predictions    : ' + str(ref_surface))
-                    print('-----')
+            # if word_map is not None and isTrain==False:
+            #     if is_Sublist(reference, hypothesis) == False:
+            #         print('ground truth   : ' + str(hyp_surface))
+            #         print('predictions    : ' + str(ref_surface))
+            #         print('-----')
+        lst = []
+        re_temp = []
+        pr_temp = []
+        punc = ['.', ',', '!', '\'', '\"', '-']
+        for j, ref_word in enumerate(hyp_surface):
+            if j in entities[i] and ref_word not in punc:
+                lst.append(ref_word)
+                re_temp.append(1)
+                pr_temp.append(0)
+        for pred_word in ref_surface:
+            if pred_word in lst:
+                index = lst.index(pred_word)
+                pr_temp[index] = 1
+        re += re_temp
+        pr += pr_temp
+
         for j, ref_word in enumerate(hyp_surface):
             if j >= len(ref_surface):
                 pred_word = 'NULL'
@@ -283,6 +302,7 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
                 recall_total += 1.0
                 if pred_word == ref_word:
                     entity_score += 1.0
+    new_f1 = str(f1_score(re, pr, average='micro'))
     if precision_total != 0:
         entity_precision = float(entity_score) / float(precision_total)
     else:
@@ -306,7 +326,7 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
         count_total += 1.0
     dialog_sub_accuracy = str(float(count_sub) * 100.0 / count_total)
     dialog_accuracy = str(float(count) * 100.0 / count_total)
-    return [str((float(total_sub_score) / len(preds))*100) + ' (' + dialog_sub_accuracy + ')', str((float(total_score) / len(preds))*100)  + ' (' + dialog_accuracy + ')' + ' (' + macro_f1_score + ')']
+    return [str((float(total_sub_score) / len(preds))*100) + ' (' + dialog_sub_accuracy + ')', str((float(total_score) / len(preds))*100)  + ' (' + dialog_accuracy + ')' + ' (' + macro_f1_score + ')' + ' (' + new_f1 + ')']
 
 def get_tokenized_response_from_padded_vector(vector, word_map):
     tokenized_response = []
