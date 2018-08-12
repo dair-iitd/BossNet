@@ -22,7 +22,8 @@ __all__ =  ["load_candidates",
             "substring_accuracy_score",
             "bleu_accuracy_score",
             "new_eval_score",
-            "visualize_attention"]
+            "visualize_attention",
+            "split_output"]
 
 ###################################################################################################
 #########                                  Global Variables                              ##########
@@ -309,7 +310,7 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
                 recall_total += 1.0
                 if pred_word == ref_word:
                     entity_score += 1.0
-    new_f1 = str(f1_score(re, pr, average='micro'))
+    new_f1 = str(100*f1_score(re, pr, average='micro'))
     if precision_total != 0:
         entity_precision = float(entity_score) / float(precision_total)
     else:
@@ -321,7 +322,7 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
     if entity_precision == 0.0 and entity_recall == 0.0:
         macro_f1_score = str(0.0)
     else:
-        macro_f1_score = str(2.0*entity_precision*entity_recall / (entity_precision + entity_recall))
+        macro_f1_score = str(100*2.0*entity_precision*entity_recall / (entity_precision + entity_recall))
     count = 0.0
     count_sub = 0.0
     count_total = 0.0
@@ -337,7 +338,7 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
         json.dump(out_actuals, f)
     with open('preds_sys.txt', 'w') as f:
         json.dump(out_preds, f)
-    return [str((float(total_sub_score) / len(preds))*100) + ' (' + dialog_sub_accuracy + ')', str((float(total_score) / len(preds))*100)  + ' (' + dialog_accuracy + ')' + ' (' + macro_f1_score + ')' + ' (' + new_f1 + ')']
+    return [str((float(total_sub_score) / len(preds))*100), dialog_sub_accuracy, str((float(total_score) / len(preds))*100), dialog_accuracy, macro_f1_score, new_f1]
 
 def get_tokenized_response_from_padded_vector(vector, word_map):
     tokenized_response = []
@@ -379,6 +380,18 @@ def new_eval_score(preds, vals, dbset, word_map=None):
 
     return [100.0*match_acc/total, 100.0*match/total]
 
+def split_output(output):
+    out_dict = {}
+    if len(output) > 1:
+        out_dict['bleu'] = output[1]
+    first = output[0]
+    out_dict['sub_acc'] = first[0]
+    out_dict['sub_dialog'] = first[1]
+    out_dict['acc'] = first[2]
+    out_dict['dialog'] = first[3]
+    out_dict['my_f1'] = first[4]
+    out_dict['f1'] = first[5]
+    return out_dict
 
 ###################################################################################################
 #########                                Visualization Tools                             ##########
@@ -390,7 +403,7 @@ def visualize_attention(data_batch, hier, line, word, p_gens, count, hierarchy):
     pred_index = 8
     for i, ans in enumerate(answers):
         if ':' in ans:
-            print ans
+            print(ans)
             lst_hier = hier[i][pred_index]
             lst_word = word[i][pred_index]
             lst_line = line[i][pred_index]

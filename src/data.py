@@ -379,7 +379,7 @@ class Data(object):
             for token_list in token:
                 token_list = token_list + [0]*(max_token_size - len(token_list))
                 pad_token.append(token_list)
-            padded_tokens.append(pad_token)
+            padded_tokens.append(np.array(pad_token))
 
         return Q, QZ, padded_tokens, QWZ, Q_in_readable_form
 

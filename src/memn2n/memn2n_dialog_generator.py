@@ -571,6 +571,29 @@ class MemN2NGeneratorDialog(object):
 			else:
 				return outputs.sample_id
 
+	def check_shape(self, name, array):
+		shape = array[0].shape
+		for i, arr in enumerate(array):
+			sh = arr.shape
+			if sh != shape:
+				print(name, i, shape, sh)
+
+	def print_feed(self, feed_dict):
+		self.check_shape('Stories: ', feed_dict[self._stories])
+		self.check_shape('Story Positions: ', feed_dict[self._story_positions])
+		self.check_shape('Story Sizes: ', feed_dict[self._sentence_sizes])
+		self.check_shape('Queries: ', feed_dict[self._queries])
+		self.check_shape('Queries Sizes: ', feed_dict[self._query_sizes])
+		if self._pointer:
+			self.check_shape('oov ids: ', feed_dict[self._oov_ids])
+			self.check_shape('oov sizes: ', feed_dict[self._oov_sizes])
+			self.check_shape('intersection mask: ', feed_dict[self._intersection_mask])
+		if self._char_emb:
+			self.check_shape('_sentence_tokens: ', feed_dict[self._sentence_tokens])
+			self.check_shape('_query_tokens: ', feed_dict[self._query_tokens])
+			self.check_shape('_sentence_word_sizes: ', feed_dict[self._sentence_word_sizes])
+			self.check_shape('_query_word_sizes: ', feed_dict[self._query_word_sizes])
+
 	def _make_feed_dict(self, batch, train=True):
 		"""Make a feed dictionary mapping parts of the batch to the appropriate placeholders.
 
@@ -631,7 +654,7 @@ class MemN2NGeneratorDialog(object):
 			query_sizes: Tensor (None, 1)
 
 		Returns:
-			answers: Tensor (None, vocab_size)
+			answers: Tensor (None, vocab_size)S
 		"""
 		feed_dict = self._make_feed_dict(batch, train=False)
 		return self._sess.run(self.predict_op, feed_dict=feed_dict)
