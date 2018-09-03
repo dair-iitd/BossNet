@@ -23,7 +23,7 @@ tf.flags.DEFINE_float("epsilon", 1e-8, "Epsilon value for Adam Optimizer.")
 tf.flags.DEFINE_float("max_grad_norm", 40.0, "Clip gradients to this norm.")
 tf.flags.DEFINE_float("word_drop_prob", 0.0, "value to set, if word_drop is set to True")
 tf.flags.DEFINE_float("p_gen_loss_weight", 0.75, 'relative weight to p_gen loss, > 1 gives more weight to p_gen loss')
-tf.flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
+tf.flags.DEFINE_integer("batch_size", 64, "Batch size for training.")
 tf.flags.DEFINE_integer("hops", 4, "Number of hops in the Memory Network.")
 tf.flags.DEFINE_integer("epochs", 4000, "Number of epochs to train for.")
 tf.flags.DEFINE_integer("embedding_size", 128, "Embedding size for embedding matrices.")
@@ -33,6 +33,7 @@ tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
 tf.flags.DEFINE_integer("shift_size", 2, "Amount of shift allowed for Location Based Addressing")
 tf.flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
+tf.flags.DEFINE_integer("eos_weight", 2, "Weight given to eos error")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
 tf.flags.DEFINE_boolean('word_drop', True, 'if True, drop db words in story')
@@ -118,6 +119,7 @@ class chatBot(object):
 		self.copy_first = FLAGS.copy_first
 		self.word_drop_prob = FLAGS.word_drop_prob
 		self.p_gen_loss_weight = FLAGS.p_gen_loss_weight
+		self.eos_weight = FLAGS.eos_weight
 
 		if self.task_id >= 6:
 			self.bleu_score=True
@@ -156,7 +158,7 @@ class chatBot(object):
 										   reduce_states=self.reduce_states, char_emb_size=256**self.char_emb_length, p_gen_loss=self.p_gen_loss,
 										   gated=self.gated, hierarchy=self.hierarchy, shift_size=self.shift_size, lba=self.lba, 
 										   word_softmax=self.word_softmax, line_softmax=self.line_softmax, soft_weight=self.soft_weight,
-										   position_emb=self.position_emb, p_gen_loss_weight=self.p_gen_loss_weight)
+										   position_emb=self.position_emb, p_gen_loss_weight=self.p_gen_loss_weight, eos_weight=self.eos_weight)
 		self.saver = tf.train.Saver(max_to_keep=4)
 
 	def build_vocab(self, data):
@@ -299,28 +301,29 @@ class chatBot(object):
 					model_count += 1
 					best_validation_accuracy = val_to_compare
 					self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
-					print('Predict Test'); sys.stdout.flush()
-					test_accuracies = self.batch_predict(Data_test, n_test)
-					if self.task_id < 6:
-						print('\nPredict OOV'); sys.stdout.flush()
-						test_oov_accuracies = self.batch_predict(Data_test_OOV, n_oov)
-					
-					print('\n-----------------------')
-					print('SUMMARY')
+				
+				print('Predict Test'); sys.stdout.flush()
+				test_accuracies = self.batch_predict(Data_test, n_test)
+				if self.task_id < 6:
+					print('\nPredict OOV'); sys.stdout.flush()
+					test_oov_accuracies = self.batch_predict(Data_test_OOV, n_oov)
+				
+				print('\n-----------------------')
+				print('SUMMARY')
+				if self.bleu_score:
+					print("Test BLEU		: ", test_accuracies['bleu'])
+				print("Test Accuracy		: ", test_accuracies['acc'])
+				print("Test Dialog		: ", test_accuracies['dialog'])
+				print("Test F1			: ", test_accuracies['f1'])
+				if self.task_id < 6:
+					print('------------')
 					if self.bleu_score:
-						print("Test BLEU		: ", test_accuracies['bleu'])
-					print("Test Accuracy		: ", test_accuracies['acc'])
-					print("Test Dialog		: ", test_accuracies['dialog'])
-					print("Test F1			: ", test_accuracies['f1'])
-					if self.task_id < 6:
-						print('------------')
-						if self.bleu_score:
-							print("Test OOV BLEU		: ", test_oov_accuracies['bleu'])
-						print("Test OOV Accuracy	: ", test_oov_accuracies['acc'])
-						print("Test OOV Dialog		: ", test_oov_accuracies['dialog'])
-						print("Test OOV F1		: ", test_oov_accuracies['f1'])
-					print('-----------------------')
-					sys.stdout.flush()
+						print("Test OOV BLEU		: ", test_oov_accuracies['bleu'])
+					print("Test OOV Accuracy	: ", test_oov_accuracies['acc'])
+					print("Test OOV Dialog		: ", test_oov_accuracies['dialog'])
+					print("Test OOV F1		: ", test_oov_accuracies['f1'])
+				print('-----------------------')
+				sys.stdout.flush()
 			
 	def test(self):
 		'''

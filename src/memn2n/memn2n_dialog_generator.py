@@ -79,7 +79,8 @@ class MemN2NGeneratorDialog(object):
 				 line_softmax=False,
 				 soft_weight=False,
 				 position_emb=False,
-				 p_gen_loss_weight=1.0):
+				 p_gen_loss_weight=1.0,
+				 eos_weight=2.0):
 
 		"""Creates an End-To-End Memory Network
 
@@ -145,6 +146,7 @@ class MemN2NGeneratorDialog(object):
 		self._soft_weight = soft_weight
 		self._position_emb = position_emb
 		self._p_gen_loss_weight = p_gen_loss_weight
+		self.eos_weight = eos_weight
 
 		# add unk and eos
 		self.UNK = decoder_vocab_to_index["UNK"]
@@ -518,6 +520,7 @@ class MemN2NGeneratorDialog(object):
 				
 				target_weights = tf.reshape(self._answer_sizes,[-1])
 				target_weights = tf.sequence_mask(target_weights, self._candidate_sentence_size, dtype=tf.float32)
+				target_weights_eos = target_weights[:, max_length-1]
 				target_weights = target_weights[:, :max_length]
 
 				if self._pointer and self._p_gen_loss:
@@ -532,11 +535,12 @@ class MemN2NGeneratorDialog(object):
 					one_minus_q = tf.clip_by_value(1-reshaped_p_gens,1e-20,1.0)
 					p_gen_loss = p*tf.log(q) + (1-p)*tf.log(one_minus_q)
 					pgen_loss_comp = -tf.reduce_sum(p_gen_loss * tf.reshape(target_weights, [-1]))
-
 					crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
 					seq_loss_comp = tf.reduce_sum(crossent * target_weights)
+					crossent = crossent[:, max_length-1]
+					seq_loss_comp_eos = tf.reduce_sum(crossent * target_weights_eos)
 					
-					loss = seq_loss_comp + self._p_gen_loss_weight*pgen_loss_comp
+					loss = seq_loss_comp + self.eos_weight*seq_loss_comp_eos + self._p_gen_loss_weight*pgen_loss_comp
 
 					return loss, final_dists, seq_loss_comp, pgen_loss_comp, p_gens
 				else:
