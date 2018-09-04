@@ -257,59 +257,62 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
     pr = []
     out_actuals = {}
     out_preds = {}
-    for i, (pred, val) in enumerate(zip(preds, vals)):
-        reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
-        hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
-        if is_Sublist(reference, hypothesis) == True:
-            total_sub_score += 1.0 
-            if d_ids[i] not in dialog_sub_dict:
-                dialog_sub_dict[d_ids[i]] = 1
-        else:
-            dialog_sub_dict[d_ids[i]] = 0
-        ref_surface = get_surface_form(reference, word_map, oov_words[i])
-        hyp_surface = get_surface_form(hypothesis, word_map, oov_words[i])
-        if reference==hypothesis:
-            total_score += 1.0
-            if d_ids[i] not in dialog_dict:
-                dialog_dict[d_ids[i]] = 1
-        else:
-            dialog_dict[d_ids[i]] = 0
-            # print incorrect results while testing
-            # if word_map is not None and isTrain==False:
-            #     if is_Sublist(reference, hypothesis) == False:
-            #         print('ground truth   : ' + str(hyp_surface))
-            #         print('predictions    : ' + str(ref_surface))
-            #         print('-----')
-        dict_size = len(out_actuals)
-        out_actuals[dict_size] = hyp_surface
-        out_preds[dict_size] = ref_surface
-        lst = []
-        re_temp = []
-        pr_temp = []
-        punc = ['.', ',', '!', '\'', '\"', '-']
-        for j, ref_word in enumerate(hyp_surface):
-            if j in entities[i] and ref_word not in punc:
-                lst.append(ref_word)
-                re_temp.append(1)
-                pr_temp.append(0)
-        for pred_word in ref_surface:
-            if pred_word in lst:
-                index = lst.index(pred_word)
-                pr_temp[index] = 1
-        re += re_temp
-        pr += pr_temp
-
-        for j, ref_word in enumerate(hyp_surface):
-            if j >= len(ref_surface):
-                pred_word = 'NULL'
+    with open('output1.log', 'w') as f:
+        for i, (pred, val) in enumerate(zip(preds, vals)):
+            reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
+            hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
+            if is_Sublist(reference, hypothesis) == True:
+                total_sub_score += 1.0 
+                if d_ids[i] not in dialog_sub_dict:
+                    dialog_sub_dict[d_ids[i]] = 1
             else:
-                pred_word = ref_surface[j]
-            if pred_word in db_words:
-                precision_total += 1.0
-            if j in entities[i]:
-                recall_total += 1.0
-                if pred_word == ref_word:
-                    entity_score += 1.0
+                dialog_sub_dict[d_ids[i]] = 0
+            ref_surface = get_surface_form(reference, word_map, oov_words[i])
+            hyp_surface = get_surface_form(hypothesis, word_map, oov_words[i])
+            if reference==hypothesis:
+                total_score += 1.0
+                if d_ids[i] not in dialog_dict:
+                    dialog_dict[d_ids[i]] = 1
+            else:
+                dialog_dict[d_ids[i]] = 0
+                # print incorrect results while testing
+                # if word_map is not None and isTrain==False:
+                #     if is_Sublist(reference, hypothesis) == False:
+                #         print('ground truth   : ' + str(hyp_surface))
+                #         print('predictions    : ' + str(ref_surface))
+                #         print('-----')
+            f.write('\nground truth   : ' + str(hyp_surface))
+            f.write('\npredictions    : ' + str(ref_surface))
+            dict_size = len(out_actuals)
+            out_actuals[dict_size] = hyp_surface
+            out_preds[dict_size] = ref_surface
+            lst = []
+            re_temp = []
+            pr_temp = []
+            punc = ['.', ',', '!', '\'', '\"', '-']
+            for j, ref_word in enumerate(hyp_surface):
+                if j in entities[i] and ref_word not in punc:
+                    lst.append(ref_word)
+                    re_temp.append(1)
+                    pr_temp.append(0)
+            for pred_word in ref_surface:
+                if pred_word in lst:
+                    index = lst.index(pred_word)
+                    pr_temp[index] = 1
+            re += re_temp
+            pr += pr_temp
+
+            for j, ref_word in enumerate(hyp_surface):
+                if j >= len(ref_surface):
+                    pred_word = 'NULL'
+                else:
+                    pred_word = ref_surface[j]
+                if pred_word in db_words:
+                    precision_total += 1.0
+                if j in entities[i]:
+                    recall_total += 1.0
+                    if pred_word == ref_word:
+                        entity_score += 1.0
     new_f1 = str(100*f1_score(re, pr, average='micro'))
     if precision_total != 0:
         entity_precision = float(entity_score) / float(precision_total)
@@ -349,15 +352,17 @@ def get_tokenized_response_from_padded_vector(vector, word_map):
             tokenized_response.append(word_map[x])
         else:
             tokenized_response.append('UNK')
-    return ' '.join(tokenized_response)
+    return tokenized_response
 
 def bleu_accuracy_score(preds, refs, word_map=None, isTrain=True):
     references = []
     hypothesis = []
     
     for pred, ref in zip(preds, refs):
-        references.append(get_tokenized_response_from_padded_vector(ref, word_map))
-        hypothesis.append(get_tokenized_response_from_padded_vector(pred, word_map))
+        ref = get_tokenized_response_from_padded_vector(ref, word_map)
+        pred = get_tokenized_response_from_padded_vector(pred, word_map)
+        references.append(' '.join(ref))
+        hypothesis.append(' '.join(pred))
         
     return moses_multi_bleu(hypothesis, references, True)
 
