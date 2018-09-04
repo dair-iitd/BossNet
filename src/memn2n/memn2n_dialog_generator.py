@@ -146,7 +146,7 @@ class MemN2NGeneratorDialog(object):
 		self._soft_weight = soft_weight
 		self._position_emb = position_emb
 		self._p_gen_loss_weight = p_gen_loss_weight
-		self.eos_weight = eos_weight
+		self._eos_weight = eos_weight
 
 		# add unk and eos
 		self.UNK = decoder_vocab_to_index["UNK"]
@@ -540,7 +540,7 @@ class MemN2NGeneratorDialog(object):
 					crossent = crossent[:, max_length-1]
 					seq_loss_comp_eos = tf.reduce_sum(crossent * target_weights_eos)
 					
-					loss = seq_loss_comp + self.eos_weight*seq_loss_comp_eos + self._p_gen_loss_weight*pgen_loss_comp
+					loss = seq_loss_comp + self._eos_weight*seq_loss_comp_eos + self._p_gen_loss_weight*pgen_loss_comp
 
 					return loss, final_dists, seq_loss_comp, pgen_loss_comp, p_gens
 				else:
