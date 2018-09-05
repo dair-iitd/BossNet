@@ -257,7 +257,7 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
     pr = []
     out_actuals = {}
     out_preds = {}
-    with open('output1.log', 'w') as f:
+    with open('output.log', 'w') as f:
         for i, (pred, val) in enumerate(zip(preds, vals)):
             reference = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX and x != -1]
             hypothesis = [x for x in val if x != EOS_INDEX and x != PAD_INDEX]
@@ -352,17 +352,15 @@ def get_tokenized_response_from_padded_vector(vector, word_map):
             tokenized_response.append(word_map[x])
         else:
             tokenized_response.append('UNK')
-    return tokenized_response
+    return ' '.join(tokenized_response)
 
 def bleu_accuracy_score(preds, refs, word_map=None, isTrain=True):
     references = []
     hypothesis = []
     
     for pred, ref in zip(preds, refs):
-        ref = get_tokenized_response_from_padded_vector(ref, word_map)
-        pred = get_tokenized_response_from_padded_vector(pred, word_map)
-        references.append(' '.join(ref))
-        hypothesis.append(' '.join(pred))
+        references.append(get_tokenized_response_from_padded_vector(ref, word_map))
+        hypothesis.append(get_tokenized_response_from_padded_vector(pred, word_map))
         
     return moses_multi_bleu(hypothesis, references, True)
 
