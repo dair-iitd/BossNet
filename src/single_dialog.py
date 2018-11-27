@@ -383,12 +383,26 @@ class chatBot(object):
 		zero_total = 0
 		zero_prob_total = 0.0
 
+		count_0=count_1=0
+		num_0=num_1=0.0
+
 		for i in tqdm(range(0, len(batches))):
 			(start, end) = batches[i]
 			#print(start, end)
 			if self.pointer:
 				batch_entry = Batch(data, start, end, self.unk_size, self.word_drop, self.word_drop_prob)
-				cost_t, logits, seq_loss, pgen_loss, pgens = self.model.batch_fit(batch_entry)
+				cost_t, logits, seq_loss, pgen_loss, p_gens, intersect_mask = self.model.batch_fit(batch_entry)
+				c0, n0, c1, n1 = analyse_pgens(mask, pgens)
+				count_0+=c0
+				count_1+=c1
+				num_0+=n0
+				num_1+=n1
+				if i == int(len(batches)/2):
+					print("----------P-MIDS-----------")
+					print("Entity           : ", str(num_0/count_0))
+					print("Non-Entity       : ", str(num_1/count_1))
+					print("---------------------------")
+					sys.stdout.flush()
 
 				if t == EPOCH_TO_PRINT+1:
 					sys.exit()
@@ -434,6 +448,11 @@ class chatBot(object):
 		# print('Epoch', t, ' Total Cost:',total_cost, '(', total_seq, '+',total_pgen, ')')
 		# print('\t',zero_total, zero_prob_total, one_total, one_prob_total)
 		
+		print("----------P-ENDS-----------")
+		print("Entity           : ", str(num_0/count_0))
+		print("Non-Entity       : ", str(num_1/count_1))
+		print("---------------------------")
+
 		return total_cost
 
 	def batch_predict(self, data, n):

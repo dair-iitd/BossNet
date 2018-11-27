@@ -23,7 +23,8 @@ __all__ =  ["load_candidates",
             "bleu_accuracy_score",
             "new_eval_score",
             "visualize_attention",
-            "split_output"]
+            "split_output",
+            "analyse_pgens"]
 
 ###################################################################################################
 #########                                  Global Variables                              ##########
@@ -399,6 +400,21 @@ def split_output(output):
 ###################################################################################################
 #########                                Visualization Tools                             ##########
 ###################################################################################################
+
+def analyse_pgens(mask, pgens):
+    c0 = 0
+    n0 = 0.0
+    c1 = 0
+    n1 = 0.0
+    for i, vals in enumerate(mask):
+        for j, val in enumerate(vals):
+            if val == 0:
+                c0+=1
+                n0+=pgens[i][j][0]
+            else:
+                c1+=1
+                n1+=pgens[i][j][0]
+    return c0, n0, c1, n1
 
 def visualize_attention(data_batch, hier, line, word, p_gens, count, hierarchy):
     hier = hier.reshape(word.shape)

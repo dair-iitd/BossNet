@@ -194,7 +194,7 @@ class MemN2NGeneratorDialog(object):
 
 		# assign ops
 		if self._pointer:
-			self.loss_op = loss_op, logits, seq_loss_op, pgen_loss_op, p_gens
+			self.loss_op = loss_op, logits, seq_loss_op, pgen_loss_op, p_gens, intersect_mask
 		else:
 			self.loss_op = loss_op, logits, seq_loss_op, pgen_loss_op
 		self.predict_op = predict_op
@@ -542,7 +542,7 @@ class MemN2NGeneratorDialog(object):
 					
 					loss = seq_loss_comp + self._eos_weight*seq_loss_comp_eos + self._p_gen_loss_weight*pgen_loss_comp
 
-					return loss, final_dists, seq_loss_comp, pgen_loss_comp, p_gens
+					return loss, final_dists, seq_loss_comp, pgen_loss_comp, p_gens, intersect_mask
 				else:
 					crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
 					seq_loss_comp = tf.reduce_sum(crossent * target_weights)
