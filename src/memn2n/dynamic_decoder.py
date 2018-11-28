@@ -273,7 +273,7 @@ def dynamic_decode(decoder,
         final_dists: The final distributions. List length max_dec_steps of (batch_size, extended_vsize) arrays.
       """
       with tf.variable_scope('final_distribution'):
-        vocab_dists = next_outputs.rnn_output
+        vocab_dists = tf.nn.softmax(next_outputs.rnn_output)
         vocab_dists = tf.multiply(vocab_dists, p_gens)
         one_minus_fn = lambda x: 1 - x
         p_gens = tf.map_fn(one_minus_fn, p_gens)

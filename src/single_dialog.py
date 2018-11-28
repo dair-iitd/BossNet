@@ -32,7 +32,7 @@ tf.flags.DEFINE_integer("random_state", None, "Random state.")
 tf.flags.DEFINE_integer("unk_size", 2, "Number of random unk words per batch")
 tf.flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
 tf.flags.DEFINE_integer("shift_size", 2, "Amount of shift allowed for Location Based Addressing")
-tf.flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
+tf.flags.DEFINE_float("soft_weight", 1.0, "Weight given to softmax function")
 tf.flags.DEFINE_integer("eos_weight", 2, "Weight given to eos error")
 tf.flags.DEFINE_boolean('interactive', False, 'if True, interactive')
 tf.flags.DEFINE_boolean('dropout', False, 'if True, uses dropout on p_gen')
@@ -293,7 +293,7 @@ class chatBot(object):
 				sys.stdout.flush()
 				
 				# Save best model
-				val_to_compare = val_accuracies['acc']
+				val_to_compare = float(val_accuracies['acc'])
 				if self.bleu_score:
 					val_to_compare = val_accuracies['bleu']
 					
@@ -391,7 +391,7 @@ class chatBot(object):
 			#print(start, end)
 			if self.pointer:
 				batch_entry = Batch(data, start, end, self.unk_size, self.word_drop, self.word_drop_prob)
-				cost_t, logits, seq_loss, pgen_loss, p_gens, intersect_mask = self.model.batch_fit(batch_entry)
+				cost_t, logits, seq_loss, pgen_loss, pgens, mask = self.model.batch_fit(batch_entry)
 				c0, n0, c1, n1 = analyse_pgens(mask, pgens)
 				count_0+=c0
 				count_1+=c1
