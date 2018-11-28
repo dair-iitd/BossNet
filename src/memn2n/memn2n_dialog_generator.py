@@ -537,19 +537,19 @@ class MemN2NGeneratorDialog(object):
 					pgen_loss_comp = -tf.reduce_sum(p_gen_loss * tf.reshape(target_weights, [-1]))
 
 					####
-                    max_oov_len = tf.reduce_max(self._oov_sizes, reduction_indices=[0])
-                    extended_vsize =  self._decoder_vocab_size + max_oov_len
-                    y_pred = tf.clip_by_value(final_dists,1e-20,1.0)
-                    y_true = tf.one_hot(ans, extended_vsize)
-                    seq_loss_comp = -tf.reduce_sum(y_true*tf.log(y_pred))
-                    ####
-                    #crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
-                    #seq_loss_comp = tf.reduce_sum(crossent * target_weights)
-                    #crossent = crossent[:, max_length-1]
-                    #seq_loss_comp_eos = tf.reduce_sum(crossent * target_weights_eos)
-                    
-                    #loss = seq_loss_comp + self._eos_weight*seq_loss_comp_eos + self._p_gen_loss_weight*pgen_loss_comp
-                    loss = seq_loss_comp + self._p_gen_loss_weight*pgen_loss_comp
+					max_oov_len = tf.reduce_max(self._oov_sizes, reduction_indices=[0])
+					extended_vsize =  self._decoder_vocab_size + max_oov_len
+					y_pred = tf.clip_by_value(final_dists,1e-20,1.0)
+					y_true = tf.one_hot(ans, extended_vsize)
+					seq_loss_comp = -tf.reduce_sum(y_true*tf.log(y_pred))
+					####
+					#crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
+					#seq_loss_comp = tf.reduce_sum(crossent * target_weights)
+					#crossent = crossent[:, max_length-1]
+					#seq_loss_comp_eos = tf.reduce_sum(crossent * target_weights_eos)
+					
+					#loss = seq_loss_comp + self._eos_weight*seq_loss_comp_eos + self._p_gen_loss_weight*pgen_loss_comp
+					loss = seq_loss_comp + self._p_gen_loss_weight*pgen_loss_comp
 
 					# crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
 					# seq_loss_comp = tf.reduce_sum(crossent * target_weights)
