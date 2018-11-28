@@ -246,16 +246,31 @@ def get_surface_form(index_list, word_map, oov_words):
             surface_form.append(oov_words[idx])
     return surface_form
 
-def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, word_map=None, isTrain=True):
+def substring_accuracy_score(preds, vals, d_ids, entities, entities_kb, entities_context, oov_words, db_words, word_map=None, isTrain=True):
     total_sub_score = 0.0
     total_score = 0.0
     dialog_sub_dict = {}
     dialog_dict = {}
+
     precision_total = 0.0
     recall_total = 0.0
     entity_score = 0.0
+
+    precision_total_kb = 0.0
+    recall_total_kb = 0.0
+    entity_score_kb = 0.0
+
+    precision_total_context = 0.0
+    recall_total_context = 0.0
+    entity_score_context = 0.0
+
     re = []
     pr = []
+    re_kb = []
+    pr_kb = []
+    re_context = []
+    pr_context = []
+
     out_actuals = {}
     out_preds = {}
     with open('output.log', 'w') as f:
@@ -268,6 +283,7 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
                     dialog_sub_dict[d_ids[i]] = 1
             else:
                 dialog_sub_dict[d_ids[i]] = 0
+            
             ref_surface = get_surface_form(reference, word_map, oov_words[i])
             hyp_surface = get_surface_form(hypothesis, word_map, oov_words[i])
             if reference==hypothesis:
@@ -284,24 +300,50 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
                 #         print('-----')
             f.write('\nground truth   : ' + str(hyp_surface))
             f.write('\npredictions    : ' + str(ref_surface))
+            
             dict_size = len(out_actuals)
             out_actuals[dict_size] = hyp_surface
             out_preds[dict_size] = ref_surface
             lst = []
+            lst_kb = []
+            lst_context = []
             re_temp = []
             pr_temp = []
+            re_temp_kb = []
+            pr_temp_kb = []
+            re_temp_context = []
+            pr_temp_context = []
             punc = ['.', ',', '!', '\'', '\"', '-']
             for j, ref_word in enumerate(hyp_surface):
                 if j in entities[i] and ref_word not in punc:
                     lst.append(ref_word)
                     re_temp.append(1)
                     pr_temp.append(0)
+                if j in entities_kb[i] and ref_word not in punc:
+                    lst_kb.append(ref_word)
+                    re_temp_kb.append(1)
+                    pr_temp_kb.append(0)
+                if j in entities_context[i] and ref_word not in punc:
+                    lst_context.append(ref_word)
+                    re_temp_context.append(1)
+                    pr_temp_context.append(0)
+
             for pred_word in ref_surface:
                 if pred_word in lst:
                     index = lst.index(pred_word)
                     pr_temp[index] = 1
+                if pred_word in lst_kb:
+                    index = lst_kb.index(pred_word)
+                    pr_temp_kb[index] = 1
+                if pred_word in lst_context:
+                    index = lst_context.index(pred_word)
+                    pr_temp_context[index] = 1
             re += re_temp
             pr += pr_temp
+            re_kb += re_temp_kb
+            pr_kb += pr_temp_kb
+            re_context += re_temp_context
+            pr_context += pr_temp_context
 
             for j, ref_word in enumerate(hyp_surface):
                 if j >= len(ref_surface):
@@ -315,6 +357,9 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
                     if pred_word == ref_word:
                         entity_score += 1.0
     new_f1 = str(100*f1_score(re, pr, average='micro'))
+    new_f1_kb = str(100*f1_score(re_kb, pr_kb, average='micro'))
+    new_f1_context = str(100*f1_score(re_context, pr_context, average='micro'))
+
     if precision_total != 0:
         entity_precision = float(entity_score) / float(precision_total)
     else:
@@ -342,7 +387,7 @@ def substring_accuracy_score(preds, vals, d_ids, entities, oov_words, db_words, 
         json.dump(out_actuals, f)
     with open('preds_sys.txt', 'w') as f:
         json.dump(out_preds, f)
-    return [str((float(total_sub_score) / len(preds))*100), dialog_sub_accuracy, str((float(total_score) / len(preds))*100), dialog_accuracy, macro_f1_score, new_f1]
+    return [str((float(total_sub_score) / len(preds))*100), dialog_sub_accuracy, str((float(total_score) / len(preds))*100), dialog_accuracy, macro_f1_score, new_f1, new_f1_kb, new_f1_context]
 
 def get_tokenized_response_from_padded_vector(vector, word_map):
     tokenized_response = []
@@ -395,6 +440,8 @@ def split_output(output):
     out_dict['dialog'] = first[3]
     out_dict['my_f1'] = first[4]
     out_dict['f1'] = first[5]
+    out_dict['f1_kb'] = first[6]
+    out_dict['f1_context'] = first[7]
     return out_dict
 
 ###################################################################################################

@@ -40,9 +40,9 @@ class Data(object):
         # Jan 6 : added answers with UNKs
         self._answers, self._answer_sizes, self._read_answers, self._answers_emb_lookup = \
             self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, self._decode_vocab_size, copy_first)
-        self._decode_to_encode_db_vocab_map, self._db_words_in_decoder_vocab, self._db_words_in_encoder_vocab, self._entity_map = self._populate_db_vocab_structures(self._stories_ext, self._answers_ext, word_idx, decoder_vocab)
+        self._decode_to_encode_db_vocab_map, self._db_words_in_decoder_vocab, self._db_words_in_encoder_vocab, self._entity_map, self._entity_context_map = self._populate_db_vocab_structures(self._stories_ext, self._answers_ext, word_idx, decoder_vocab)
         self._intersection_set = self._intersection_set_mask(self._answers, decoder_vocab)
-        self._entities = self._get_entity_indecies(self._entity_map, self._read_answers)
+        self._entities, self._entities_kb, self._entities_context = self._get_entity_indecies(self._entity_map, self._entity_context_map, self._read_answers)
 
         
     @property
@@ -154,6 +154,14 @@ class Data(object):
         return self._entities
 
     @property
+    def entities_kb(self):
+        return self._entities_kb
+
+    @property
+    def entities_context(self):
+        return self._entities_context
+
+    @property
     def db_vocab_id(self):
         return self._db_vocab_id
 
@@ -170,6 +178,7 @@ class Data(object):
         db_words_in_decoder_vocab = {}
         db_words_in_encoder_vocab = {}
         entity_map = []
+        entity_context_map = []
         for _, story in enumerate(stories):
             for _, sentence in enumerate(story, 1):
                 if '$db' in sentence:
@@ -190,6 +199,8 @@ class Data(object):
                 for w in answer[1:]:
                     if w not in entity_map:
                         entity_map.append(w)
+                    if w not in entity_context_map:
+                        entity_context_map.append(w)
                     if w in word_idx and w in decoder_vocab and decoder_vocab[w] not in decode_to_encode_db_vocab_map:
                         decode_to_encode_db_vocab_map[decoder_vocab[w]]=word_idx[w]
                         #print(w + " " + str(word_idx[w]) + " " + str(decoder_vocab[w]))
@@ -200,7 +211,7 @@ class Data(object):
                         
         #print(db_words_in_decoder_vocab)
         #print(db_words_in_encoder_vocab)
-        return decode_to_encode_db_vocab_map, db_words_in_decoder_vocab, db_words_in_encoder_vocab, entity_map
+        return decode_to_encode_db_vocab_map, db_words_in_decoder_vocab, db_words_in_encoder_vocab, entity_map, entity_context_map
 
 
     def _extract_data_items(self, data):
@@ -451,15 +462,25 @@ class Data(object):
                 vocab.add(decode_to_encode_db_vocab_map[w])
         return vocab
     
-    def _get_entity_indecies(self, entity_map, read_answers):
+    def _get_entity_indecies(self, entity_map, entity_context_map, read_answers):
         entities = []
+        entities_kb = []
+        entities_context = []
         for ans in read_answers:
             ent = []
+            kb = []
+            context = []
             for i, word in enumerate(ans.split()):
                 if word in entity_map:
                     ent.append(i)
+                if word in entity_context_map:
+                    context.append(i)
+                else:
+                    kb.append(i)
             entities.append(ent)
-        return entities
+            entities_kb.append(kb)
+            entities_context.append(context)
+        return entities, entities_kb, entities_context
 
 class Batch(Data):
 
@@ -518,6 +539,8 @@ class Batch(Data):
         self._intersection_set = data.intersection_set[start:end]
 
         self._entities = data.entities[start:end]
+        self._entities_kb = data.entities_kb[start:end]
+        self._entities_context = data.entities_context[start:end]
 
     def _get_char_drop_tokens(self, stories, idx2word):
         Word_tokens = []

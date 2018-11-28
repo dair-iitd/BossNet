@@ -21,7 +21,7 @@ from tqdm import tqdm
 tf.flags.DEFINE_float("learning_rate", 0.0005, "Learning rate for Adam Optimizer.")
 tf.flags.DEFINE_float("epsilon", 1e-8, "Epsilon value for Adam Optimizer.")
 tf.flags.DEFINE_float("max_grad_norm", 40.0, "Clip gradients to this norm.")
-tf.flags.DEFINE_float("word_drop_prob", 0.0, "value to set, if word_drop is set to True")
+tf.flags.DEFINE_float("word_drop_prob", 0.1, "value to set, if word_drop is set to True")
 tf.flags.DEFINE_float("p_gen_loss_weight", 0.75, 'relative weight to p_gen loss, > 1 gives more weight to p_gen loss')
 tf.flags.DEFINE_integer("batch_size", 64, "Batch size for training.")
 tf.flags.DEFINE_integer("hops", 4, "Number of hops in the Memory Network.")
@@ -283,12 +283,16 @@ class chatBot(object):
 				print("Train Accuracy		: ", train_accuracies['acc'])
 				print("Train Dialog		: ", train_accuracies['dialog'])
 				print("Train F1		: ", train_accuracies['f1'])
+				print("Train F2		: ", train_accuracies['f1_kb'])
+				print("Train F3		: ", train_accuracies['f1_context'])
 				print('------------')
 				if self.bleu_score:
 					print("Validation BLEU		: ", val_accuracies['bleu'])
 				print("Validation Accuracy	: ", val_accuracies['acc'])
 				print("Validation Dialog	: ", val_accuracies['dialog'])
 				print("Validation F1		: ", val_accuracies['f1'])
+				print("Validation F2		: ", val_accuracies['f1_kb'])
+				print("Validation F3		: ", val_accuracies['f1_context'])
 				print('-----------------------')
 				sys.stdout.flush()
 				
@@ -301,6 +305,7 @@ class chatBot(object):
 					model_count += 1
 					best_validation_accuracy = val_to_compare
 					self.saver.save(self.sess, self.model_dir + 'model.ckpt', global_step=t)
+					print('MODEL SAVED')
 				
 				print('Predict Test'); sys.stdout.flush()
 				test_accuracies = self.batch_predict(Data_test, n_test)
@@ -315,6 +320,8 @@ class chatBot(object):
 				print("Test Accuracy		: ", test_accuracies['acc'])
 				print("Test Dialog		: ", test_accuracies['dialog'])
 				print("Test F1			: ", test_accuracies['f1'])
+				print("Test F2		: ", test_accuracies['f1_kb'])
+				print("Test F3		: ", test_accuracies['f1_context'])
 				if self.task_id < 6:
 					print('------------')
 					if self.bleu_score:
@@ -322,6 +329,8 @@ class chatBot(object):
 					print("Test OOV Accuracy	: ", test_oov_accuracies['acc'])
 					print("Test OOV Dialog		: ", test_oov_accuracies['dialog'])
 					print("Test OOV F1		: ", test_oov_accuracies['f1'])
+					print("Test OOV F2		: ", test_oov_accuracies['f1_kb'])
+					print("Test OOV F3		: ", test_oov_accuracies['f1_context'])
 				print('-----------------------')
 				sys.stdout.flush()
 			
@@ -463,6 +472,8 @@ class chatBot(object):
 			preds = []
 			d_ids = []
 			entities = []
+			entities_kb = []
+			entities_context = []
 			oov_words = []
 		else:
 			preds = []
@@ -489,6 +500,8 @@ class chatBot(object):
 				preds += pad_to_answer_size(list(new_pred), self.candidate_sentence_size)
 				d_ids += data_batch._dialog_ids
 				entities += data_batch._entities
+				entities_kb += data_batch._entities_kb
+				entities_context += data_batch._entities_context
 				oov_words += data_batch._oov_words
 				if self.visualize: # and count == 31:
 					print(count)
@@ -496,7 +509,7 @@ class chatBot(object):
 			else:
 				pred = self.model.predict(data_batch)
 				preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
-		output = [substring_accuracy_score(preds, data.answers, d_ids, entities, oov_words, data.entity_words, word_map=self.decoder_index_to_vocab, isTrain=self.is_train)]
+		output = [substring_accuracy_score(preds, data.answers, d_ids, entities, entities_kb, entities_context, oov_words, data.entity_words, word_map=self.decoder_index_to_vocab, isTrain=self.is_train)]
 		if self.bleu_score:
 			output += [bleu_accuracy_score(preds, data.answers, word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
 		output = split_output(output)
