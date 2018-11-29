@@ -402,8 +402,6 @@ class Data(object):
         A_in_readable_form = []
 
         for i, answer in enumerate(answers):
-            print(i)
-            print(OOV_words[i])
             aq = max(0, candidate_sentence_size - len(answer) - 1)
             a = []
             a_emb_lookup = []

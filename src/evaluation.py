@@ -172,12 +172,6 @@ for num, org in zip(dialog_ids, orginal):
 for num, org in zip(mem2seq_d_ids, mem2seq):
 	ordered_mem2seq[num+1].append(org)
 
-print(ordered_orig[2])
-print(ordered_mem2seq[2])
-
-for i in [20, 71, 72, 73, 71, 74, 20, 71, 72, 73, 18, 74]:
-	print(word_map[i])
-
 preds, preds_mem2seq, golds = merge(ordered_orig, ordered_mem2seq)
 
 print('BLUE : ' + BLEU(preds, golds, word_map))
