@@ -473,10 +473,10 @@ class Data(object):
             for i, word in enumerate(ans.split()):
                 if word in entity_map:
                     ent.append(i)
-                if word in entity_context_map:
-                    context.append(i)
-                else:
-                    kb.append(i)
+                    if word in entity_context_map:
+                        context.append(i)
+                    else:
+                        kb.append(i)
             entities.append(ent)
             entities_kb.append(kb)
             entities_context.append(context)

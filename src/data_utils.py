@@ -4,11 +4,11 @@ import os
 import re
 import json
 import sys
+import pickle as pkl
 from measures import moses_multi_bleu
 import numpy as np
 import tensorflow as tf
 from nltk.translate.bleu_score import corpus_bleu
-from string import punctuation
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
@@ -247,6 +247,15 @@ def get_surface_form(index_list, word_map, oov_words):
     return surface_form
 
 def substring_accuracy_score(preds, vals, d_ids, entities, entities_kb, entities_context, oov_words, db_words, word_map=None, isTrain=True):
+    pkl.dump(preds, open( "files/pred.pkl", "wb" ))
+    pkl.dump(vals, open( "files/golds.pkl", "wb" ))
+    pkl.dump(word_map, open( "files/word_map.pkl", "wb" ))
+    pkl.dump(entities, open( "files/entities.pkl", "wb" ))
+    pkl.dump(entities_kb, open( "files/entities_kb.pkl", "wb" ))
+    pkl.dump(entities_context, open( "files/entities_context.pkl", "wb" ))
+    pkl.dump(d_ids, open( "files/dialog_ids.pkl", "wb" ))
+    pkl.dump(oov_words, open( "files/oov_words.pkl", "wb" ))
+
     total_sub_score = 0.0
     total_score = 0.0
     dialog_sub_dict = {}
