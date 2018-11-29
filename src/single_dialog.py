@@ -509,7 +509,7 @@ class chatBot(object):
 			else:
 				pred = self.model.predict(data_batch)
 				preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
-		output = [substring_accuracy_score(preds, data.answers, d_ids, entities, entities_kb, entities_context, oov_words, data.entity_words, word_map=self.decoder_index_to_vocab, isTrain=self.is_train)]
+		output = [substring_accuracy_score(preds, data.answers, d_ids, entities, entities_kb, entities_context, oov_words, data.entity_words, inv_word_map=self.decoder_vocab_to_index, word_map=self.decoder_index_to_vocab, isTrain=self.is_train)]
 		if self.bleu_score:
 			output += [bleu_accuracy_score(preds, data.answers, word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
 		output = split_output(output)

@@ -246,10 +246,11 @@ def get_surface_form(index_list, word_map, oov_words):
             surface_form.append(oov_words[idx])
     return surface_form
 
-def substring_accuracy_score(preds, vals, d_ids, entities, entities_kb, entities_context, oov_words, db_words, word_map=None, isTrain=True):
+def substring_accuracy_score(preds, vals, d_ids, entities, entities_kb, entities_context, oov_words, db_words, inv_word_map, word_map=None, isTrain=True):
     pkl.dump(preds, open( "files/pred.pkl", "wb" ))
     pkl.dump(vals, open( "files/golds.pkl", "wb" ))
     pkl.dump(word_map, open( "files/word_map.pkl", "wb" ))
+    pkl.dump(inv_word_map, open( "files/index_map.pkl", "wb" ))
     pkl.dump(entities, open( "files/entities.pkl", "wb" ))
     pkl.dump(entities_kb, open( "files/entities_kb.pkl", "wb" ))
     pkl.dump(entities_context, open( "files/entities_context.pkl", "wb" ))

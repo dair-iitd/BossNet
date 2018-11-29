@@ -3,6 +3,8 @@ import numpy as np
 from measures import moses_multi_bleu
 from sklearn.metrics import f1_score
 import pickle as pkl
+from collections import defaultdict
+import re
 
 stop_words=set(["a","an","the"])
 PAD_INDEX = 0
@@ -20,11 +22,11 @@ def get_surface_form(index_list, word_map, oov_words):
     size = len(word_map)
     return [word_map[i] if i in word_map else oov_words[i - size] for i in index_list]
 
-def surface(preds, golds):
+def surface(preds, golds, word_map, oov_words):
 	surface_preds = []
 	surface_golds = []
 	for i, (pred, gold) in enumerate(zip(preds, golds)):
-		surface_preds.append(get_surface_form(predictions, word_map, oov_words[i]))
+		surface_preds.append(get_surface_form(pred, word_map, oov_words[i]))
 		surface_golds.append(get_surface_form(gold, word_map, oov_words[i]))
 	return surface_preds, surface_golds
 
@@ -55,7 +57,7 @@ def f1(preds, golds, entities, word_map):
 	re = []
 	pr = []
 
-	punc = ['.', ',', '!', '\'', '\"', '-']
+	punc = ['.', ',', '!', '\'', '\"', '-', '?']
 
 	for i, (pred, gold) in enumerate(zip(preds, golds)):
 		re_temp = []
@@ -68,7 +70,6 @@ def f1(preds, golds, entities, word_map):
 				lst.append(ref_word)
 				re_temp.append(1)
 				pr_temp.append(0)
-
 		for pred_word in pred:
 			if pred_word in lst:
 				index = lst.index(pred_word)
@@ -93,18 +94,92 @@ def BLEU(preds, golds, word_map):
     pkl.dump(tokenized_golds, open( "files/tokenized_golds.pkl", "wb" ))
     pkl.dump(tokenized_preds, open( "files/tokenized_preds.pkl", "wb" ))
 
-    return "{:.2f}".format(moses_multi_bleu(tokenized_golds, tokenized_preds, True))
+    return "{:.2f}".format(moses_multi_bleu(tokenized_preds, tokenized_golds, True))
+
+def tokenize(vals, dids):
+	tokens = []
+	punc = ['.', ',', '!', '\'', '\"', '-', '?']
+	for i, val in enumerate(vals):
+		# val = ' \' '.join(val.split('.'))
+		# sval = val.split() 
+		sval = [x.strip() for x in re.split('(\W+)?', val) if x.strip()]
+		idxs = []
+		did = dids[i]
+		oov_word = ordered_oovs[did+1]
+		for i, token in enumerate(sval):
+			if token in index_map:
+				idx = index_map[token]
+			elif token in oov_word:
+				idx = len(index_map) + oov_word.index(token)
+			else:
+				print(token)
+				print(sval)
+				idx = UNK_INDEX
+			if token not in punc or i+1 < len(sval) :
+				idxs.append(idx)
+		tokens.append(idxs)
+	return tokens
+
+def merge(ordered_orig, ordered_mem2seq):
+	preds = []
+	preds_mem2seq = []
+	golds = []
+	for i in range(1, len(ordered_orig)+1):
+		val1 = ordered_orig[i]
+		val2 = ordered_mem2seq[i]
+		for (p, g) in val1:
+			preds.append(p)
+			golds.append(g)
+		for (p, g) in val2:
+			preds_mem2seq.append(p)
+	return preds, preds_mem2seq, golds
 
 preds = pkl.load(open( "files/pred.pkl", "rb" ))
 golds = pkl.load(open( "files/golds.pkl", "rb" ))
 word_map = pkl.load(open( "files/word_map.pkl", "rb" ))
+index_map = pkl.load(open( "files/index_map.pkl", "rb" ))
 entities = pkl.load(open( "files/entities.pkl", "rb" ))
 entities2 = pkl.load(open( "files/entities_kb.pkl", "rb" ))
 entities3 = pkl.load(open( "files/entities_context.pkl", "rb" ))
 dialog_ids = pkl.load(open( "files/dialog_ids.pkl", "rb" ))
 oov_words = pkl.load(open( "files/oov_words.pkl", "rb" ))
 
+mem2seq_golds_surf = pkl.load(open( "files/mem2seq_golds.pkl", "rb" ))
+mem2seq_pred_surf = pkl.load(open( "files/mem2seq_preds.pkl", "rb" ))
+mem2seq_d_ids = pkl.load(open( "files/mem2seq_dids.pkl", "rb" ))
+
 preds, golds = process(preds, golds)
+surf_preds, surf_golds = surface(preds, golds, word_map, oov_words)
+
+ordered_oovs = {}
+
+for num, words in zip(dialog_ids, oov_words):
+	if num not in ordered_oovs:
+		ordered_oovs[num] = list(words)
+
+mem2seq_preds = tokenize(mem2seq_pred_surf, mem2seq_d_ids)
+mem2seq_golds = tokenize(mem2seq_golds_surf, mem2seq_d_ids)
+
+ordered_orig = defaultdict(list)
+ordered_mem2seq = defaultdict(list)
+
+orginal = zip(preds, golds)
+mem2seq = zip(mem2seq_preds, mem2seq_golds)
+
+for num, org in zip(dialog_ids, orginal):
+	ordered_orig[num].append(org)
+
+for num, org in zip(mem2seq_d_ids, mem2seq):
+	ordered_mem2seq[num+1].append(org)
+
+print(ordered_orig[2])
+print(ordered_mem2seq[2])
+
+for i in [20, 71, 72, 73, 71, 74, 20, 71, 72, 73, 18, 74]:
+	print(word_map[i])
+
+preds, preds_mem2seq, golds = merge(ordered_orig, ordered_mem2seq)
+
 print('BLUE : ' + BLEU(preds, golds, word_map))
 acc, dial = accuracy(preds, golds, dialog_ids)
 print('Accuracy : ' + acc)
@@ -112,4 +187,12 @@ print('Dialog Acc. : ' + dial)
 print('f1 : ' + f1(preds, golds, entities, word_map))
 print('f1 kb : ' + f1(preds, golds, entities2, word_map))
 print('f1 context: ' + f1(preds, golds, entities3, word_map))
+
+print('BLUE : ' + BLEU(preds_mem2seq, golds, word_map))
+acc, dial = accuracy(preds_mem2seq, golds, dialog_ids)
+print('Accuracy : ' + acc)
+print('Dialog Acc. : ' + dial)
+print('f1 : ' + f1(preds_mem2seq, golds, entities, word_map))
+print('f1 kb : ' + f1(preds_mem2seq, golds, entities2, word_map))
+print('f1 context: ' + f1(preds_mem2seq, golds, entities3, word_map))
 
