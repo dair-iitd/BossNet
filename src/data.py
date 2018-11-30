@@ -1,6 +1,7 @@
 import numpy as np
 import random
 from itertools import chain
+import pdb
 
 PAD_INDEX = 0
 UNK_INDEX = 1
@@ -283,6 +284,8 @@ class Data(object):
 
             # Jan 6 : changed index to k
             for k, sentence in enumerate(story, 1):
+                if len(sentence) > sentence_size:
+                    sentence = sentence[:sentence_size]
                 ls = max(0, sentence_size - len(sentence))
                 # Jan 6 : words not in vocab are changed from NIL to UNK
                 ss.append([word_idx[w] if w in word_idx else UNK_INDEX for w in sentence] + [0] * ls)
@@ -371,6 +374,8 @@ class Data(object):
         Q_in_readable_form = []
 
         for i, query in enumerate(queries):
+            if len(query) > sentence_size:
+                    query = query[:sentence_size]
             lq = max(0, sentence_size - len(query))
             # Jan 6 : words not in vocab are changed from NIL to UNK
             q = [word_idx[w] if w in word_idx else UNK_INDEX for w in query] + [0] * lq
@@ -402,6 +407,8 @@ class Data(object):
         A_in_readable_form = []
 
         for i, answer in enumerate(answers):
+            if len(answer) > candidate_sentence_size-1:
+                    answer = answer[:candidate_sentence_size-1]
             aq = max(0, candidate_sentence_size - len(answer) - 1)
             a = []
             a_emb_lookup = []
@@ -470,6 +477,7 @@ class Data(object):
             ent = []
             kb = []
             context = []
+            pdb.set_trace()
             for i, word in enumerate(ans.split()):
                 if word in entity_map:
                     ent.append(i)
@@ -480,6 +488,7 @@ class Data(object):
             entities.append(ent)
             entities_kb.append(kb)
             entities_context.append(context)
+
         return entities, entities_kb, entities_context
 
 class Batch(Data):

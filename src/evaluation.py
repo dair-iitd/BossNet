@@ -143,7 +143,7 @@ def merge(ordered_orig, ordered_base, gold_out=True):
 			preds_mem2seq.append(p)
 	return preds, preds_base, golds
 
-turk = sys.argv[1]
+turk = int(sys.argv[1])
 
 ## BoSsNet Files
 preds = pkl.load(open( "files/pred.pkl", "rb" ))
