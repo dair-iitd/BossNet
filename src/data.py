@@ -477,7 +477,6 @@ class Data(object):
             ent = []
             kb = []
             context = []
-            pdb.set_trace()
             for i, word in enumerate(ans.split()):
                 if word in entity_map:
                     ent.append(i)
