@@ -5,6 +5,8 @@ from sklearn.metrics import f1_score
 import pickle as pkl
 from collections import defaultdict
 import re
+import sys
+import random
 
 stop_words=set(["a","an","the"])
 PAD_INDEX = 0
@@ -12,23 +14,36 @@ UNK_INDEX = 1
 GO_SYMBOL_INDEX = 2
 EOS_INDEX = 3
 
-def process(preds, golds):
+def process(preds, golds, query=None, context=None):
 	for i, (pred, gold) in enumerate(zip(preds, golds)):
 		preds[i] = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX]
 		golds[i] = [x for x in gold if x != EOS_INDEX and x != PAD_INDEX]
-	return preds, golds
+	if query:
+		for i, q in enumerate(query):
+			query[i] = [x for x in q if x != EOS_INDEX and x != PAD_INDEX]
+	if context:
+		for i, story in enumerate(context):
+			trimmed_story = []
+			for line in story:
+				trimmed_story.append([x for x in line if x != EOS_INDEX and x != PAD_INDEX])
+			context[i] = trimmed_story 
+	return preds, golds, query, context
 
-def get_surface_form(index_list, word_map, oov_words):
+def get_surface_form(index_list, word_map, oov_words, context=False):
     size = len(word_map)
-    return [word_map[i] if i in word_map else oov_words[i - size] for i in index_list]
+    if context:
+    	surfaces = []
+    	for story_line in index_list:
+    		surfaces.append([word_map[i] if i in word_map else oov_words[i - size] for i in index_list])
+    	return surfaces
+    else:
+	    return [word_map[i] if i in word_map else oov_words[i - size] for i in index_list]
 
-def surface(preds, golds, word_map, oov_words):
-	surface_preds = []
-	surface_golds = []
-	for i, (pred, gold) in enumerate(zip(preds, golds)):
-		surface_preds.append(get_surface_form(pred, word_map, oov_words[i]))
-		surface_golds.append(get_surface_form(gold, word_map, oov_words[i]))
-	return surface_preds, surface_golds
+def surface(index_list, word_map, oov_words, context=False):
+	surfaces = []
+	for i, lst in enumerate(index_list):
+		surfaces.append(get_surface_form(lst, word_map, oov_words[i], context))
+	return surfaces
 
 def accuracy(preds, golds, dialog_ids):
 	total_score = 0
@@ -93,59 +108,44 @@ def BLEU(preds, golds, word_map):
 
     return "{:.2f}".format(moses_multi_bleu(tokenized_preds, tokenized_golds, True))
 
-def BLEU2(preds, golds, word_map):
-    # tokenized_preds = []
-    tokenized_golds = []
-
-    for pred, gold in zip(preds, golds):
-        # tokenized_preds.append(get_tokenized_response_from_padded_vector(pred, word_map))
-        tokenized_golds.append(get_tokenized_response_from_padded_vector(gold, word_map))
-
-    return "{:.2f}".format(moses_multi_bleu(preds, tokenized_golds, True))
-
 def tokenize(vals, dids):
 	tokens = []
 	punc = ['.', ',', '!', '\'', '\"', '-', '?']
 	for i, val in enumerate(vals):
-		# val = ' \' '.join(val.split('.'))
-		# sval = val.split() 
 		sval = [x.strip() for x in re.split('(\W+)?', val) if x.strip()]
 		idxs = []
-		did = dids[i]
-		oov_word = ordered_oovs[did+1]
+		did = dids[i] + 1
+		oov_word = ordered_oovs[did]
+		sval = [x for x in sval if '$$$$' not in x]
 		for i, token in enumerate(sval):
 			if token in index_map:
 				idx = index_map[token]
 			elif token in oov_word:
 				idx = len(index_map) + oov_word.index(token)
 			else:
-				print(token)
-				print(sval)
-				print(oov_word)
 				idx = UNK_INDEX
 			if token not in punc or i+1 < len(sval) :
 				idxs.append(idx)
 		tokens.append(idxs)
 	return tokens
 
-def merge(ordered_orig, ordered_mem2seq, surf):
+def merge(ordered_orig, ordered_base, gold_out=True):
 	preds = []
-	preds_mem2seq = []
-	preds_mem2seq_surf = []
+	preds_base = []
 	golds = []
 	for i in range(1, len(ordered_orig)+1):
 		val1 = ordered_orig[i]
-		val2 = ordered_mem2seq[i]
-		val3 = surf[i]
+		val2 = ordered_base[i]
 		for (p, g) in val1:
 			preds.append(p)
 			golds.append(g)
 		for (p, g) in val2:
 			preds_mem2seq.append(p)
-		for (p, g) in val3:
-			preds_mem2seq_surf.append(p)
-	return preds, preds_mem2seq, preds_mem2seq_surf, golds
+	return preds, preds_base, golds
 
+turk = sys.argv[1]
+
+## BoSsNet Files
 preds = pkl.load(open( "files/pred.pkl", "rb" ))
 golds = pkl.load(open( "files/golds.pkl", "rb" ))
 word_map = pkl.load(open( "files/word_map.pkl", "rb" ))
@@ -156,15 +156,31 @@ entities3 = pkl.load(open( "files/entities_context.pkl", "rb" ))
 dialog_ids = pkl.load(open( "files/dialog_ids.pkl", "rb" ))
 oov_words = pkl.load(open( "files/oov_words.pkl", "rb" ))
 
+if turk == 1:
+	context = pkl.load(open( "files/context.pkl", "rb" ))
+	query = pkl.load(open( "files/query.pkl", "rb" ))
+else:
+	context = None
+	query = None
+
+## Mem2Seq Files
 mem2seq_golds_surf = pkl.load(open( "files/mem2seq_golds.pkl", "rb" ))
-mem2seq_pred_surf = pkl.load(open( "files/mem2seq_preds.pkl", "rb" ))
+mem2seq_preds_surf = pkl.load(open( "files/mem2seq_preds.pkl", "rb" ))
 mem2seq_d_ids = pkl.load(open( "files/mem2seq_dids.pkl", "rb" ))
 
-preds, golds = process(preds, golds)
-surf_preds, surf_golds = surface(preds, golds, word_map, oov_words)
+## PTRUNK Files
+PTRUNK_golds_surf = pkl.load(open( "files/PTRUNK_golds.pkl", "rb" ))
+PTRUNK_preds_surf = pkl.load(open( "files/PTRUNK_preds.pkl", "rb" ))
+PTRUNK_d_ids = pkl.load(open( "files/PTRUNK_dids.pkl", "rb" ))
+
+## Vanilla Files
+vanilla_golds_surf = pkl.load(open( "files/vanilla_golds.pkl", "rb" ))
+vanilla_preds_surf = pkl.load(open( "files/vanilla_preds.pkl", "rb" ))
+vanilla_d_ids = pkl.load(open( "files/vanilla_dids.pkl", "rb" ))
+
+preds, golds, query, context = process(preds, golds, query, context)
 
 ordered_oovs = {}
-
 for num, words in zip(dialog_ids, oov_words):
 	if num not in ordered_oovs:
 		ordered_oovs[num] = list(words)
@@ -172,28 +188,73 @@ for num, words in zip(dialog_ids, oov_words):
 		if len(list(words)) > len(ordered_oovs[num]):
 			ordered_oovs[num] = list(words)
 
-mem2seq_preds = tokenize(mem2seq_pred_surf, mem2seq_d_ids)
+mem2seq_preds = tokenize(mem2seq_preds_surf, mem2seq_d_ids)
 mem2seq_golds = tokenize(mem2seq_golds_surf, mem2seq_d_ids)
+
+PTRUNK_preds = tokenize(PTRUNK_preds_surf, PTRUNK_d_ids)
+PTRUNK_golds = tokenize(PTRUNK_golds_surf, PTRUNK_d_ids)
+
+vanilla_preds = tokenize(vanilla_preds_surf, vanilla_d_ids)
+vanilla_golds = tokenize(vanilla_golds_surf, vanilla_d_ids)
+
 
 ordered_orig = defaultdict(list)
 ordered_mem2seq = defaultdict(list)
-ordered_mem2seq_surf = defaultdict(list)
+ordered_PTRUNK = defaultdict(list)
+ordered_vanilla = defaultdict(list)
 
-orginal = zip(preds, golds)
+if turk == 1:
+	orginal = zip(preds, golds, query, context)
+else:
+	orginal = zip(preds, golds)
+
 mem2seq = zip(mem2seq_preds, mem2seq_golds)
-mem2seq_surf = zip(mem2seq_pred_surf, mem2seq_golds_surf)
+PTRUNK = zip(PTRUNK_preds, PTRUNK_golds)
+vanilla = zip(vanilla_preds, vanilla_golds)
 
 for num, org in zip(dialog_ids, orginal):
-	ordered_orig[num].append(org)
+	if turk == 1:
+		p, g, q, c = org
+		element_dict = {}
+		element_dict[preds] = p
+		element_dict[golds] = g
+		element_dict[queries] = q
+		element_dict[context] = c
+		ordered_orig[num].append(element_dict)
+	else:
+		p, g = org
+		element_dict = {}
+		element_dict[preds] = p
+		element_dict[golds] = g
+		ordered_orig[num].append(element_dict)
 
 for num, org in zip(mem2seq_d_ids, mem2seq):
-	ordered_mem2seq[num+1].append(org)
+	p, g = org
+	element_dict = {}
+	element_dict[preds] = p
+	element_dict[golds] = g
+	ordered_mem2seq[num+1].append(element_dict)
 
-for num, org in zip(mem2seq_d_ids, mem2seq_surf):
-	ordered_mem2seq_surf[num+1].append(org)
+for num, org in zip(PTRUNK_d_ids, PTRUNK):
+	p, g = org
+	element_dict = {}
+	element_dict[preds] = p
+	element_dict[golds] = g
+	ordered_PTRUNK[num+1].append(element_dict)
 
-preds, preds_mem2seq, preds_mem2seq_surf, golds = merge(ordered_orig, ordered_mem2seq, ordered_mem2seq_surf)
+for num, org in zip(vanilla_d_ids, vanilla):
+	p, g = org
+	element_dict = {}
+	element_dict[preds] = p
+	element_dict[golds] = g
+	ordered_vanilla[num+1].append(element_dict)
 
+preds, golds, queries, context = merge(ordered_orig, ordered_mem2seq, True)
+preds_mem2seq = merge(ordered_orig, ordered_mem2seq, False)
+preds_PTRUNK = merge(ordered_orig, ordered_PTRUNK, False)
+preds_vanilla = merge(ordered_orig, ordered_vanilla, False)
+
+print('\nBoSsNet')
 print('BLUE : ' + BLEU(preds, golds, word_map))
 acc, dial = accuracy(preds, golds, dialog_ids)
 print('Accuracy : ' + acc)
@@ -202,12 +263,44 @@ print('f1 : ' + f1(preds, golds, entities, word_map))
 print('f1 kb : ' + f1(preds, golds, entities2, word_map))
 print('f1 context: ' + f1(preds, golds, entities3, word_map))
 
+print('\nMem2Seq')
 print('BLUE : ' + BLEU(preds_mem2seq, golds, word_map))
-print('BLUE : ' + BLEU2(preds_mem2seq_surf, golds, word_map))
 acc, dial = accuracy(preds_mem2seq, golds, dialog_ids)
 print('Accuracy : ' + acc)
 print('Dialog Acc. : ' + dial)
 print('f1 : ' + f1(preds_mem2seq, golds, entities, word_map))
 print('f1 kb : ' + f1(preds_mem2seq, golds, entities2, word_map))
 print('f1 context: ' + f1(preds_mem2seq, golds, entities3, word_map))
+
+print('\nPTRUNK')
+print('BLUE : ' + BLEU(preds_PTRUNK, golds, word_map))
+acc, dial = accuracy(preds_PTRUNK, golds, dialog_ids)
+print('Accuracy : ' + acc)
+print('Dialog Acc. : ' + dial)
+print('f1 : ' + f1(preds_PTRUNK, golds, entities, word_map))
+print('f1 kb : ' + f1(preds_PTRUNK, golds, entities2, word_map))
+print('f1 context: ' + f1(preds_PTRUNK, golds, entities3, word_map))
+
+print('\nVanilla')
+print('BLUE : ' + BLEU(preds_vanilla, golds, word_map))
+acc, dial = accuracy(preds_vanilla, golds, dialog_ids)
+print('Accuracy : ' + acc)
+print('Dialog Acc. : ' + dial)
+print('f1 : ' + f1(preds_vanilla, golds, entities, word_map))
+print('f1 kb : ' + f1(preds_vanilla, golds, entities2, word_map))
+print('f1 context: ' + f1(preds_vanilla, golds, entities3, word_map))
+
+if turk:
+	size = len(preds)
+	sample = random.sample(c, 10)
+	output_dict = {}
+	for i in sample:
+		output_dict[i]['context'] = context[i]
+		output_dict[i]['query'] = queries[i]
+		output_dict[i]['gold'] = golds[i]
+		output_dict[i]['boss'] = preds[i]
+		output_dict[i]['mem2seq'] = preds_mem2seq[i]
+		output_dict[i]['ptrunk'] = preds_PTRUNK[i]
+		output_dict[i]['vanilla'] = preds_vanilla[i]
+	pkl.dump(output_dict, open( "files/turk.pkl", "wb" ))
 
