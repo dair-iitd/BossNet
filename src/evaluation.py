@@ -91,10 +91,17 @@ def BLEU(preds, golds, word_map):
         tokenized_preds.append(get_tokenized_response_from_padded_vector(pred, word_map))
         tokenized_golds.append(get_tokenized_response_from_padded_vector(gold, word_map))
 
-    pkl.dump(tokenized_golds, open( "files/tokenized_golds.pkl", "wb" ))
-    pkl.dump(tokenized_preds, open( "files/tokenized_preds.pkl", "wb" ))
-
     return "{:.2f}".format(moses_multi_bleu(tokenized_preds, tokenized_golds, True))
+
+def BLEU2(preds, golds, word_map):
+    # tokenized_preds = []
+    tokenized_golds = []
+
+    for pred, gold in zip(preds, golds):
+        # tokenized_preds.append(get_tokenized_response_from_padded_vector(pred, word_map))
+        tokenized_golds.append(get_tokenized_response_from_padded_vector(gold, word_map))
+
+    return "{:.2f}".format(moses_multi_bleu(preds, tokenized_golds, True))
 
 def tokenize(vals, dids):
 	tokens = []
@@ -114,25 +121,30 @@ def tokenize(vals, dids):
 			else:
 				print(token)
 				print(sval)
+				print(oov_word)
 				idx = UNK_INDEX
 			if token not in punc or i+1 < len(sval) :
 				idxs.append(idx)
 		tokens.append(idxs)
 	return tokens
 
-def merge(ordered_orig, ordered_mem2seq):
+def merge(ordered_orig, ordered_mem2seq, surf):
 	preds = []
 	preds_mem2seq = []
+	preds_mem2seq_surf = []
 	golds = []
 	for i in range(1, len(ordered_orig)+1):
 		val1 = ordered_orig[i]
 		val2 = ordered_mem2seq[i]
+		val3 = surf[i]
 		for (p, g) in val1:
 			preds.append(p)
 			golds.append(g)
 		for (p, g) in val2:
 			preds_mem2seq.append(p)
-	return preds, preds_mem2seq, golds
+		for (p, g) in val3:
+			preds_mem2seq_surf.append(p)
+	return preds, preds_mem2seq, preds_mem2seq_surf, golds
 
 preds = pkl.load(open( "files/pred.pkl", "rb" ))
 golds = pkl.load(open( "files/golds.pkl", "rb" ))
@@ -156,15 +168,20 @@ ordered_oovs = {}
 for num, words in zip(dialog_ids, oov_words):
 	if num not in ordered_oovs:
 		ordered_oovs[num] = list(words)
+	else:
+		if len(list(words)) > len(ordered_oovs[num]):
+			ordered_oovs[num] = list(words)
 
 mem2seq_preds = tokenize(mem2seq_pred_surf, mem2seq_d_ids)
 mem2seq_golds = tokenize(mem2seq_golds_surf, mem2seq_d_ids)
 
 ordered_orig = defaultdict(list)
 ordered_mem2seq = defaultdict(list)
+ordered_mem2seq_surf = defaultdict(list)
 
 orginal = zip(preds, golds)
 mem2seq = zip(mem2seq_preds, mem2seq_golds)
+mem2seq_surf = zip(mem2seq_pred_surf, mem2seq_golds_surf)
 
 for num, org in zip(dialog_ids, orginal):
 	ordered_orig[num].append(org)
@@ -172,7 +189,10 @@ for num, org in zip(dialog_ids, orginal):
 for num, org in zip(mem2seq_d_ids, mem2seq):
 	ordered_mem2seq[num+1].append(org)
 
-preds, preds_mem2seq, golds = merge(ordered_orig, ordered_mem2seq)
+for num, org in zip(mem2seq_d_ids, mem2seq_surf):
+	ordered_mem2seq_surf[num+1].append(org)
+
+preds, preds_mem2seq, preds_mem2seq_surf, golds = merge(ordered_orig, ordered_mem2seq, ordered_mem2seq_surf)
 
 print('BLUE : ' + BLEU(preds, golds, word_map))
 acc, dial = accuracy(preds, golds, dialog_ids)
@@ -183,6 +203,7 @@ print('f1 kb : ' + f1(preds, golds, entities2, word_map))
 print('f1 context: ' + f1(preds, golds, entities3, word_map))
 
 print('BLUE : ' + BLEU(preds_mem2seq, golds, word_map))
+print('BLUE : ' + BLEU2(preds_mem2seq_surf, golds, word_map))
 acc, dial = accuracy(preds_mem2seq, golds, dialog_ids)
 print('Accuracy : ' + acc)
 print('Dialog Acc. : ' + dial)
