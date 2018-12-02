@@ -505,15 +505,16 @@ class chatBot(object):
 				entities_kb += data_batch._entities_kb
 				entities_context += data_batch._entities_context
 				oov_words += data_batch._oov_words
-				context += data_batch._stories
-				query += data_batch._queries
+				context += data_batch._read_stories
+				query += data_batch._read_queries
+				answers += data_batch._read_answers
 				if self.visualize: # and count == 31:
 					print(count)
 					visualize_attention(data_batch, hier, line, word, p_gens, count, self.hierarchy)
 			else:
 				pred = self.model.predict(data_batch)
 				preds += pad_to_answer_size(list(pred), self.candidate_sentence_size)
-		output = [substring_accuracy_score(preds, data.answers, d_ids, entities, entities_kb, entities_context, oov_words, data.entity_words, context, query, inv_word_map=self.decoder_vocab_to_index, word_map=self.decoder_index_to_vocab, isTrain=self.is_train)]
+		output = [substring_accuracy_score(preds, data.answers, d_ids, entities, entities_kb, entities_context, oov_words, data.entity_words, context, query, answers, inv_word_map=self.decoder_vocab_to_index, word_map=self.decoder_index_to_vocab, isTrain=self.is_train)]
 		if self.bleu_score:
 			output += [bleu_accuracy_score(preds, data.answers, word_map=self.decoder_index_to_vocab,isTrain=self.is_train)]
 		output = split_output(output)

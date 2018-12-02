@@ -246,7 +246,7 @@ def get_surface_form(index_list, word_map, oov_words):
             surface_form.append(oov_words[idx])
     return surface_form
 
-def substring_accuracy_score(preds, vals, d_ids, entities, entities_kb, entities_context, oov_words, db_words, context, query, inv_word_map, word_map=None, isTrain=True):
+def substring_accuracy_score(preds, vals, d_ids, entities, entities_kb, entities_context, oov_words, db_words, context, query, answers, inv_word_map, word_map=None, isTrain=True):
     pkl.dump(preds, open( "files/pred.pkl", "wb" ))
     pkl.dump(vals, open( "files/golds.pkl", "wb" ))
     pkl.dump(word_map, open( "files/word_map.pkl", "wb" ))
@@ -258,6 +258,7 @@ def substring_accuracy_score(preds, vals, d_ids, entities, entities_kb, entities
     pkl.dump(oov_words, open( "files/oov_words.pkl", "wb" ))
     pkl.dump(context, open( "files/context.pkl", "wb" ))
     pkl.dump(query, open( "files/query.pkl", "wb" ))
+    pkl.dump(answers, open( "files/answers.pkl", "wb" ))
 
     total_sub_score = 0.0
     total_score = 0.0

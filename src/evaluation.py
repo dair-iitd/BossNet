@@ -14,30 +14,42 @@ UNK_INDEX = 1
 GO_SYMBOL_INDEX = 2
 EOS_INDEX = 3
 
-def process(preds, golds, query=None, context=None):
+def process(preds, golds):
 	for i, (pred, gold) in enumerate(zip(preds, golds)):
 		preds[i] = [x for x in pred if x != EOS_INDEX and x != PAD_INDEX]
 		golds[i] = [x for x in gold if x != EOS_INDEX and x != PAD_INDEX]
-	if query:
-		for i, q in enumerate(query):
-			query[i] = [x for x in q if x != EOS_INDEX and x != PAD_INDEX]
-	if context:
-		for i, story in enumerate(context):
-			trimmed_story = []
-			for line in story:
-				trimmed_story.append([x for x in line if x != EOS_INDEX and x != PAD_INDEX])
-			context[i] = trimmed_story 
-	return preds, golds, query, context
+	# if query:
+	# 	for i, q in enumerate(query):
+	# 		query[i] = [x for x in q if x != EOS_INDEX and x != PAD_INDEX]
+	# if context:
+	# 	for i, story in enumerate(context):
+	# 		trimmed_story = []
+	# 		for line in story:
+	# 			trimmed_story.append([x for x in line if x != EOS_INDEX and x != PAD_INDEX])
+	# 		context[i] = trimmed_story 
+	return preds, golds
 
 def get_surface_form(index_list, word_map, oov_words, context=False):
     size = len(word_map)
     if context:
     	surfaces = []
     	for story_line in index_list:
-    		surfaces.append([word_map[i] if i in word_map else oov_words[i - size] for i in index_list])
+    		surfaces.append([word_map[i] if i in word_map else oov_words[i - size] for i in story_line])
     	return surfaces
     else:
-	    return [word_map[i] if i in word_map else oov_words[i - size] for i in index_list]
+    	lst = []
+    	for i in index_list:
+    		if i in word_map:
+    			lst.append(i)
+    		elif i - size < len(oov_words):
+    			lst.append(oov_words[i - size])
+    		else:
+    			print(i)
+    			print(size)
+    			print(oov_words)
+    	return lst
+
+	    # return [word_map[i] if i in word_map else oov_words[i - size] for i in index_list]
 
 def surface(index_list, word_map, oov_words, context=False):
 	surfaces = []
@@ -129,19 +141,30 @@ def tokenize(vals, dids):
 		tokens.append(idxs)
 	return tokens
 
-def merge(ordered_orig, ordered_base, gold_out=True):
+def merge(ordered, gold_out=True):
 	preds = []
-	preds_base = []
-	golds = []
-	for i in range(1, len(ordered_orig)+1):
-		val1 = ordered_orig[i]
-		val2 = ordered_base[i]
-		for (p, g) in val1:
-			preds.append(p)
-			golds.append(g)
-		for (p, g) in val2:
-			preds_mem2seq.append(p)
-	return preds, preds_base, golds
+	if gold_out:
+		golds = []
+		dids = []
+	if turk == 1:
+		queries = []; context = []; answers = []
+	else:
+		queries = None; context = None; answers = None
+	for i in range(1, len(ordered)+1):
+		val = ordered[i]
+		for dct in val:
+			preds.append(dct['preds'])
+			if gold_out:
+				golds.append(dct['golds'])
+				dids.append(i)
+			if turk == 1:
+				queries.append(dct['queries'])
+				context.append(dct['context'])
+				answers.append(dct['answers'])
+	if gold_out:
+		return preds, golds, queries, context, answers, dids
+	else:
+		return preds
 
 turk = int(sys.argv[1])
 
@@ -159,9 +182,13 @@ oov_words = pkl.load(open( "files/oov_words.pkl", "rb" ))
 if turk == 1:
 	context = pkl.load(open( "files/context.pkl", "rb" ))
 	query = pkl.load(open( "files/query.pkl", "rb" ))
+	answers = pkl.load(open( "files/answers.pkl", "rb" ))
 else:
 	context = None
 	query = None
+	answers = None
+
+print(query)
 
 ## Mem2Seq Files
 mem2seq_golds_surf = pkl.load(open( "files/mem2seq_golds.pkl", "rb" ))
@@ -178,7 +205,7 @@ vanilla_golds_surf = pkl.load(open( "files/vanilla_golds.pkl", "rb" ))
 vanilla_preds_surf = pkl.load(open( "files/vanilla_preds.pkl", "rb" ))
 vanilla_d_ids = pkl.load(open( "files/vanilla_dids.pkl", "rb" ))
 
-preds, golds, query, context = process(preds, golds, query, context)
+preds, golds = process(preds, golds)
 
 ordered_oovs = {}
 for num, words in zip(dialog_ids, oov_words):
@@ -197,14 +224,13 @@ PTRUNK_golds = tokenize(PTRUNK_golds_surf, PTRUNK_d_ids)
 vanilla_preds = tokenize(vanilla_preds_surf, vanilla_d_ids)
 vanilla_golds = tokenize(vanilla_golds_surf, vanilla_d_ids)
 
-
 ordered_orig = defaultdict(list)
 ordered_mem2seq = defaultdict(list)
 ordered_PTRUNK = defaultdict(list)
 ordered_vanilla = defaultdict(list)
 
 if turk == 1:
-	orginal = zip(preds, golds, query, context)
+	orginal = zip(preds, golds, query, context, answers)
 else:
 	orginal = zip(preds, golds)
 
@@ -214,45 +240,46 @@ vanilla = zip(vanilla_preds, vanilla_golds)
 
 for num, org in zip(dialog_ids, orginal):
 	if turk == 1:
-		p, g, q, c = org
-		element_dict = {}
-		element_dict[preds] = p
-		element_dict[golds] = g
-		element_dict[queries] = q
-		element_dict[context] = c
+		p, g, q, c, a = org
+		element_dict = defaultdict(list)
+		element_dict['preds'] = p
+		element_dict['golds'] = g
+		element_dict['queries'] = q
+		element_dict['context'] = c
+		element_dict['answers'] = a
 		ordered_orig[num].append(element_dict)
 	else:
 		p, g = org
-		element_dict = {}
-		element_dict[preds] = p
-		element_dict[golds] = g
+		element_dict = defaultdict(list)
+		element_dict['preds'] = p
+		element_dict['golds'] = g
 		ordered_orig[num].append(element_dict)
 
 for num, org in zip(mem2seq_d_ids, mem2seq):
 	p, g = org
-	element_dict = {}
-	element_dict[preds] = p
-	element_dict[golds] = g
+	element_dict = defaultdict(list)
+	element_dict['preds'] = p
+	element_dict['golds'] = g
 	ordered_mem2seq[num+1].append(element_dict)
 
 for num, org in zip(PTRUNK_d_ids, PTRUNK):
 	p, g = org
-	element_dict = {}
-	element_dict[preds] = p
-	element_dict[golds] = g
+	element_dict = defaultdict(list)
+	element_dict['preds'] = p
+	element_dict['golds'] = g
 	ordered_PTRUNK[num+1].append(element_dict)
 
 for num, org in zip(vanilla_d_ids, vanilla):
 	p, g = org
-	element_dict = {}
-	element_dict[preds] = p
-	element_dict[golds] = g
+	element_dict = defaultdict(list)
+	element_dict['preds'] = p
+	element_dict['golds'] = g
 	ordered_vanilla[num+1].append(element_dict)
 
-preds, golds, queries, context = merge(ordered_orig, ordered_mem2seq, True)
-preds_mem2seq = merge(ordered_orig, ordered_mem2seq, False)
-preds_PTRUNK = merge(ordered_orig, ordered_PTRUNK, False)
-preds_vanilla = merge(ordered_orig, ordered_vanilla, False)
+preds, golds, queries, context, answers, dids = merge(ordered_orig, True)
+preds_mem2seq = merge(ordered_mem2seq, False)
+preds_PTRUNK = merge(ordered_PTRUNK, False)
+preds_vanilla = merge(ordered_vanilla, False)
 
 print('\nBoSsNet')
 print('BLUE : ' + BLEU(preds, golds, word_map))
@@ -292,15 +319,33 @@ print('f1 context: ' + f1(preds_vanilla, golds, entities3, word_map))
 
 if turk:
 	size = len(preds)
+	print('context_size : {}'.format(len(context)))
+	print('query_size : {}'.format(len(queries)))
+	print('golds_size : {}'.format(len(golds)))
+	print('preds_size : {}'.format(len(preds)))
+	print('preds_mem2seq_size : {}'.format(len(preds_mem2seq)))
+	print('preds_PTRUNK_size : {}'.format(len(preds_PTRUNK)))
+	print('preds_vanilla_size : {}'.format(len(preds_vanilla)))
+	c = list(range(1, size+1))
 	sample = random.sample(c, 10)
 	output_dict = {}
 	for i in sample:
+		output_dict[i] = {}
+		output_dict[i]['d_id'] = dids[i]
+		# output_dict[i]['context'] = get_surface_form(context[i], word_map, ordered_oovs[dids[i]], True)
+		# output_dict[i]['query'] = get_surface_form(queries[i], word_map, ordered_oovs[dids[i]])
+		# output_dict[i]['gold'] = get_surface_form(golds[i], word_map, ordered_oovs[dids[i]])
+		# output_dict[i]['boss'] = get_surface_form(preds[i], word_map, ordered_oovs[dids[i]])
+		# output_dict[i]['mem2seq'] = get_surface_form(preds_mem2seq[i], word_map, ordered_oovs[dids[i]])
+		# output_dict[i]['ptrunk'] = get_surface_form(preds_PTRUNK[i], word_map, ordered_oovs[dids[i]])
+		# output_dict[i]['vanilla'] = get_surface_form(preds_vanilla[i], word_map, ordered_oovs[dids[i]])
 		output_dict[i]['context'] = context[i]
 		output_dict[i]['query'] = queries[i]
-		output_dict[i]['gold'] = golds[i]
+		output_dict[i]['gold'] = answers[i]
 		output_dict[i]['boss'] = preds[i]
 		output_dict[i]['mem2seq'] = preds_mem2seq[i]
 		output_dict[i]['ptrunk'] = preds_PTRUNK[i]
 		output_dict[i]['vanilla'] = preds_vanilla[i]
+	print(output_dict)
 	pkl.dump(output_dict, open( "files/turk.pkl", "wb" ))
 
