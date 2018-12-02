@@ -477,6 +477,7 @@ class chatBot(object):
 			oov_words = []
 			context = []
 			query = [] 
+			answers = []
 		else:
 			preds = []
 		count = 0

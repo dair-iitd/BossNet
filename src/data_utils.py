@@ -139,8 +139,8 @@ def tokenize(sent):
     result=[x.strip() for x in re.split('(\W+)?', sent) if x.strip()] # and x.strip() not in stop_words]
     if not result:
         result=['<silence>']
-    # if result[-1]=='.' or result[-1]=='?' or result[-1]=='!':
-    #     result=result[:-1]
+    if result[-1]=='.' or result[-1]=='?' or result[-1]=='!':
+        result=result[:-1]
     return result
 
 def get_responses(f):
