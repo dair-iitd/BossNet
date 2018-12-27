@@ -54,107 +54,36 @@ def add_gradient_noise(t, stddev=1e-3, name=None):
 class MemN2NGeneratorDialog(object):
 	"""End-To-End Memory Network with a generative decoder."""
 
-	def __init__(self, batch_size, vocab_size, sentence_size, embedding_size,
-				 decoder_vocab_to_index,candidate_sentence_size, 
-				 hops=3,
-				 max_grad_norm=40.0,
-				 nonlin=None,
-				 initializer=tf.random_normal_initializer(stddev=0.1),
-				 optimizer=tf.train.AdamOptimizer(learning_rate=1e-2),
-				 session=tf.Session(),
-				 name='MemN2N',
-				 task_id=1,
-				 pointer=False,
-				 dropout=False,
-				 char_emb=False,
-				 rnn=False,
-				 reduce_states=False,
-				 char_emb_size=256,
-				 p_gen_loss=False,
-				 gated=False,
-				 hierarchy=True,
-				 shift_size=2,
-				 lba=False,
-				 word_softmax=False,
-				 line_softmax=False,
-				 soft_weight=False,
-				 position_emb=False,
-				 p_gen_loss_weight=1.0,
-				 eos_weight=2.0):
+	def __init__(self, args):
 
-		"""Creates an End-To-End Memory Network
+		# Initialize Model Variables
+		self._batch_size = args.batch_size
+		self._beam_width = args.beam_width
+		self._candidate_sentence_size = args.candidate_sentence_size
+		self._char_emb = args.char_emb
+		self._decode_idx = args.decode_idx
+		self._embedding_size = args.embedding_size
+		self._hierarchy = args.hierarchy
+		self._hops = args.hops
+		self._init = tf.random_normal_initializer(stddev=0.1)
+		self._max_grad_norm = args.max_grad_norm
+		self._name = 'MemN2N'
+		self._opt = args.optimizer
+		self._p_gen_loss = args.p_gen_loss
+		self._p_gen_loss_weight = args.p_gen_loss_weight
+		self._rnn = args.rnn
+		self._sentence_size = args.sentence_size
+		self._soft_weight = args.soft_weight
+		self._token_emb_size = args.char_embedding_size
+		self._task_id = args.task_id
+		self._vocab_size = args.vocab_size
 
-		Args:
-			batch_size: The size of the batch.
+		# Add unk and eos
+		self.UNK = self._decode_idx["UNK"]
+		self.EOS = self._decode_idx["EOS"]
+		self.GO_SYMBOL = self._decode_idx["GO_SYMBOL"]
 
-			vocab_size: The size of the vocabulary (should include the nil word). The nil word
-			one-hot encoding should be 0.
-
-			sentence_size: The max size of a sentence in the data. All sentences should be padded
-			to this length. If padding is required it should be done with nil one-hot encoding (0).
-
-			memory_size: The max size of the memory. Since Tensorflow currently does not support jagged arrays
-			all memories must be padded to this length. If padding is required, the extra memories should be
-			empty memories; memories filled with the nil word ([0, 0, 0, ......, 0]).
-
-			embedding_size: The size of the word embedding.
-
-			candidates_vec: The numpy array of candidates encoding.
-
-			hops: The number of hops. A hop consists of reading and addressing a memory slot.
-			Defaults to `3`.
-
-			max_grad_norm: Maximum L2 norm clipping value. Defaults to `40.0`.
-
-			nonlin: Non-linearity. Defaults to `None`.
-
-			initializer: Weight initializer. Defaults to `tf.random_normal_initializer(stddev=0.1)`.
-
-			optimizer: Optimizer algorithm used for SGD. Defaults to `tf.train.AdamOptimizer(learning_rate=1e-2)`.
-
-			encoding: A function returning a 2D Tensor (sentence_size, embedding_size). Defaults to `position_encoding`.
-
-			session: Tensorflow Session the model is run with. Defaults to `tf.Session()`.
-
-			name: Name of the End-To-End Memory Network. Defaults to `MemN2N`.
-		"""
-
-		self._batch_size = batch_size
-		self._vocab_size = vocab_size
-		self._sentence_size = sentence_size
-		self._embedding_size = embedding_size
-		self._hops = hops
-		self._max_grad_norm = max_grad_norm
-		self._nonlin = nonlin
-		self._init = initializer
-		self._opt = optimizer
-		self._name = name
-		self._candidate_sentence_size = candidate_sentence_size
-		self._pointer = pointer
-		self._dropout = dropout
-		self._char_emb = char_emb
-		self._reduce_states = reduce_states
-		self._token_emb_size = char_emb_size
-		self._p_gen_loss = p_gen_loss
-		self._gated = gated
-		self._hierarchy = hierarchy
-		self._rnn = rnn
-		self._shift_size = shift_size
-		self._lba = lba
-		self._word_softmax = word_softmax
-		self._line_softmax = line_softmax
-		self._soft_weight = soft_weight
-		self._position_emb = position_emb
-		self._p_gen_loss_weight = p_gen_loss_weight
-		self._eos_weight = eos_weight
-
-		# add unk and eos
-		self.UNK = decoder_vocab_to_index["UNK"]
-		self.EOS = decoder_vocab_to_index["EOS"]
-		self.GO_SYMBOL = decoder_vocab_to_index["GO_SYMBOL"]
-
-		self._decoder_vocab_size = len(decoder_vocab_to_index)
-		self._decoder_vocab_to_index = decoder_vocab_to_index
+		self._decoder_vocab_size = len(self._decode_idx)
 
 		self._build_inputs()
 		self._build_vars()
@@ -162,18 +91,12 @@ class MemN2NGeneratorDialog(object):
 		# define summary directory
 		timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
 		self.root_dir = "%s_%s_%s_%s/" % ('task',
-										  str(task_id), 'summary_output', timestamp)
+										  str(self._task_id), 'summary_output', timestamp)
 
-		if self._pointer:
-			encoder_states, line_memory, word_memory, attn_arr = self._encoder(self._stories, self._story_positions, self._queries)
-		else:
-			encoder_states, line_memory, attn_arr = self._encoder(self._stories, self._story_positions, self._queries)
+		encoder_states, line_memory, word_memory, attn_arr = self._encoder(self._stories, self._story_positions, self._queries)
 		
 		# train_op 
-		if self._pointer:
-			loss_op, logits, seq_loss_op, pgen_loss_op, p_gens, intersect_mask = self._decoder_train(encoder_states, line_memory, word_memory)
-		else:
-			loss_op, logits, seq_loss_op, pgen_loss_op = self._decoder_train(encoder_states, line_memory)
+		loss_op, logits, seq_loss_op, pgen_loss_op, p_gens, intersect_mask = self._decoder_train(encoder_states, line_memory, word_memory)
 
 		# gradient pipeline
 		grads_and_vars = self._opt.compute_gradients(loss_op)
@@ -187,23 +110,17 @@ class MemN2NGeneratorDialog(object):
 		train_op = self._opt.apply_gradients(nil_grads_and_vars, name="train_op")
 
 		# predict ops
-		if self._pointer:
-			predict_op = self._decoder_runtime(encoder_states, line_memory, word_memory)
-		else:
-			predict_op = self._decoder_runtime(encoder_states, line_memory)
+		predict_op = self._decoder_runtime(encoder_states, line_memory, word_memory)
 
 		# assign ops
-		if self._pointer:
-			self.loss_op = loss_op, logits, seq_loss_op, pgen_loss_op, p_gens, intersect_mask
-		else:
-			self.loss_op = loss_op, logits, seq_loss_op, pgen_loss_op
+		self.loss_op = loss_op, logits, seq_loss_op, pgen_loss_op, p_gens, intersect_mask
 		self.predict_op = predict_op
 		self.train_op = train_op
 
 		self.graph_output = self.loss_op
 
 		init_op = tf.global_variables_initializer()
-		self._sess = session
+		self._sess = args.session
 		self._sess.run(init_op)
 
 	def _build_inputs(self):
@@ -237,10 +154,6 @@ class MemN2NGeneratorDialog(object):
 			A = tf.concat([nil_word_slot, self._init([self._vocab_size - 1, self._embedding_size])], 0)
 			self.A = tf.Variable(A, name="A")
 			
-			if self._position_emb:
-				P = tf.concat([nil_word_slot, self._init([self._sentence_size, self._embedding_size])], 0)
-				self.P = tf.Variable(P, name="P")
-			
 			C = tf.concat([nil_word_slot, self._init([self._decoder_vocab_size, self._embedding_size])], 0)
 			self.C = tf.Variable(C, name="C")
 
@@ -252,82 +165,21 @@ class MemN2NGeneratorDialog(object):
 				self.decoder_cell = tf.contrib.rnn.GRUCell(self._embedding_size)
 				self.projection_layer = layers_core.Dense(self._decoder_vocab_size, use_bias=False)
 
-			if self._gated:
-				self.W_HS = []
-				self.b_HS = []
-				for hop_index in range(self._hops):
-					self.W_HS.append(tf.Variable(self._init([self._embedding_size, self._embedding_size]), name="W_HS"))
-					self.b_HS.append(tf.Variable(self._init([self._embedding_size]), name="b_HS"))
+			with tf.variable_scope("encoder"):
+				self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
+				self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
 
-			if self._reduce_states:
-				with tf.variable_scope("encoder"):
-					self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size)
-					self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size)
-
-				with tf.variable_scope('reduce_final_st'):
-					# Define weights and biases to reduce the cell and reduce the state
-					self.w_reduce = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce")
-					self.bias_reduce = tf.Variable(self._init([self._embedding_size]), name="bias_reduce")
-
-				with tf.variable_scope('reduce_word_st'):
-					# Define weights and biases to reduce the cell and reduce the state
-					self.w_reduce_word = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce_word")
-					self.bias_reduce_word = tf.Variable(self._init([self._embedding_size]), name="bias_reduce_word")
-
-				if self._char_emb:
-					with tf.variable_scope("char_emb"):
-						self.char_fwd = tf.contrib.rnn.GRUCell(self._embedding_size)
-						self.char_bwd = tf.contrib.rnn.GRUCell(self._embedding_size)
-
-					with tf.variable_scope('reduce_char_st'):
-						# Define weights and biases to reduce the cell and reduce the state
-						self.w_reduce_char = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce_char")
-						self.bias_reduce_char = tf.Variable(self._init([self._embedding_size]), name="bias_reduce_char")
-				
-			else:
-				with tf.variable_scope("encoder"):
-					self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
-					self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
-
-				if self._char_emb:
-					with tf.variable_scope("char_emb"):
-						self.char_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
-						self.char_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
+			if self._char_emb:
+				with tf.variable_scope("char_emb"):
+					self.char_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
+					self.char_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
 
 			with tf.variable_scope('reduce_bow'):
 				# Define weights and biases to reduce the cell and reduce the state
 				self.w_reduce_bow = tf.Variable(self._init([self._embedding_size * 2, self._embedding_size]), name="w_reduce_bow")
 				self.bias_reduce_bow = tf.Variable(self._init([self._embedding_size]), name="bias_reduce_bow")
 
-		if self._position_emb:
-			self._nil_vars = set([self.A.name, self.P.name])
-		else:
-			self._nil_vars = set([self.A.name])
-
-	def _reduce_states_fn(self, fw_st, bw_st):
-		with tf.variable_scope('reduce_final_st'):
-
-			# Apply linear layer
-			old_c = tf.concat(axis=1, values=[fw_st, bw_st]) # Concatenation of fw and bw cell
-			new_c = tf.nn.relu(tf.matmul(old_c, self.w_reduce) + self.bias_reduce) # Get new cell from old cell
-			return new_c # Return new cell state
-
-	def _reduce_word_states(self, fw_st, bw_st):
-		with tf.variable_scope('reduce_word_st'):
-
-			# Apply linear layer
-			old_c = tf.concat(axis=2, values=[fw_st, bw_st]) # Concatenation of fw and bw cell
-			old_c = tf.reshape(old_c, [-1, self._embedding_size * 2])
-			new_c = tf.nn.relu(tf.matmul(old_c, self.w_reduce_word) + self.bias_reduce_word) # Get new cell from old cell
-			return new_c # Return new cell state
-
-	def _reduce_char_states(self, fw_st, bw_st):
-		with tf.variable_scope('reduce_char_st'):
-
-			# Apply linear layer
-			old_c = tf.concat(axis=1, values=[fw_st, bw_st]) # Concatenation of fw and bw cell
-			new_c = tf.nn.relu(tf.matmul(old_c, self.w_reduce_char) + self.bias_reduce_char) # Get new cell from old cell
-			return new_c # Return new cell state
+		self._nil_vars = set([self.A.name])
 
 	def _reduce_to_bow(self, emb):
 		with tf.variable_scope('reduce_bow'):
@@ -357,10 +209,7 @@ class MemN2NGeneratorDialog(object):
 				with tf.variable_scope("char_emb"):
 					(outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.char_fwd, self.char_bwd, query_token_emb, sequence_length=query_token_sizes, dtype=tf.float32)
 				(f_state, b_state) = output_states
-				if self._reduce_states:
-					query_char_emb = self._reduce_char_states(f_state, b_state)
-				else:
-					query_char_emb = tf.concat(axis=1, values=[f_state, b_state])
+				query_char_emb = tf.concat(axis=1, values=[f_state, b_state])
 				query_char_emb = tf.reshape(query_char_emb, [self._batch_size, self._sentence_size, self._embedding_size])
 				# query_emb : batch_size x sentence_size x embedding_size*2
 				query_emb = tf.concat(axis=2, values=[query_char_emb, query_word_emb])
@@ -375,10 +224,7 @@ class MemN2NGeneratorDialog(object):
 				(f_state, b_state) = output_states
 
 				# u_0 : batch_size x embedding_size
-				if self._reduce_states:
-					u_0 = self._reduce_states_fn(f_state, b_state)
-				else:
-					u_0 = tf.concat(axis=1, values=[f_state, b_state])
+				u_0 = tf.concat(axis=1, values=[f_state, b_state])
 			else:
 				if self._char_emb:
 					query_emb = self._reduce_to_bow(query_emb)
@@ -390,9 +236,6 @@ class MemN2NGeneratorDialog(object):
 			# stories : batch_size x memory_size x sentence_size
 			# memory_word_emb : batch_size x memory_size x sentence_size x embedding_size
 			memory_word_emb = tf.nn.embedding_lookup(self.A, stories)
-			if self._position_emb:
-				memory_position_emb = tf.nn.embedding_lookup(self.P, story_positions)
-				memory_word_emb = tf.add(memory_word_emb, memory_position_emb)
 			
 			if self._char_emb:
 				sentence_token_sizes = tf.reshape(self._sentence_word_sizes, [-1])
@@ -401,10 +244,7 @@ class MemN2NGeneratorDialog(object):
 				with tf.variable_scope("char_emb", reuse=True):
 					(outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.char_fwd, self.char_bwd, sentence_token_emb, sequence_length=sentence_token_sizes, dtype=tf.float32)
 				(f_state, b_state) = output_states
-				if self._reduce_states:
-					memory_char_emb = self._reduce_char_states(f_state, b_state)
-				else:
-					memory_char_emb = tf.concat(axis=1, values=[f_state, b_state])
+				memory_char_emb = tf.concat(axis=1, values=[f_state, b_state])
 				memory_char_emb = tf.reshape(memory_char_emb, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
 				memory_word_emb = tf.nn.dropout(memory_word_emb, self._keep_prob)
 				memory_emb = tf.concat(axis=3, values=[memory_char_emb, memory_word_emb])
@@ -418,10 +258,7 @@ class MemN2NGeneratorDialog(object):
 					(outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.encoder_fwd, self.encoder_bwd, memory_emb, sequence_length=sentence_sizes, dtype=tf.float32)
 				(f_state, b_state) = output_states
 				
-				if self._reduce_states:
-					line_memory = self._reduce_states_fn(f_state, b_state)
-				else:
-					line_memory = tf.concat(axis=1, values=[f_state, b_state])
+				line_memory = tf.concat(axis=1, values=[f_state, b_state])
 				# line_memory : batch_size x memory_size x embedding_size
 				line_memory = tf.reshape(line_memory, [self._batch_size, self._memory_size, self._embedding_size])
 			else:
@@ -430,17 +267,12 @@ class MemN2NGeneratorDialog(object):
 				memory_emb = tf.reshape(memory_emb, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
 				line_memory = tf.reduce_sum(memory_emb, 2)
 			
-			
-			if self._pointer:
-				if self._rnn:
-					(f_states, b_states) = outputs
-					if self._reduce_states:
-						word_memory = self._reduce_states_fn(f_states, b_states)
-					else:
-						word_memory = tf.concat(axis=2, values=[f_states, b_states]) 
-					word_memory = tf.reshape(word_memory, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
-				else:
-					word_memory = memory_emb
+			if self._rnn:
+				(f_states, b_states) = outputs
+				word_memory = tf.concat(axis=2, values=[f_states, b_states]) 
+				word_memory = tf.reshape(word_memory, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
+			else:
+				word_memory = memory_emb
 
 			### Implement Hop Network ###
 			attn_arr = []
@@ -457,40 +289,22 @@ class MemN2NGeneratorDialog(object):
 				c_temp = tf.transpose(line_memory, [0, 2, 1])
 				o_k = tf.reduce_sum(c_temp * probs_temp, 2)
 				
-				if self._gated:
-					# t_k : batch_size x embedding_size
-					t_k = tf.sigmoid(  tf.add( tf.matmul(u[-1],self.W_HS[hop_index]) , self.b_HS[hop_index]) )
-					u_k = tf.multiply( tf.matmul(u[-1], self.H) , t_k ) + tf.multiply( o_k , tf.subtract(tf.ones_like(t_k),t_k) )
-				else:
-					u_k = tf.matmul(u[-1], self.H) + o_k
-
-				# nonlinearity
-				if self._nonlin:
-					u_k = self._nonlin(u_k)
+				u_k = tf.matmul(u[-1], self.H) + o_k
 
 				u.append(u_k)
 			
-			if self._pointer:
-				return u_k, line_memory, word_memory, attn_arr
-			else:
-				return u_k, line_memory, attn_arr
+			return u_k, line_memory, word_memory, attn_arr
 
 	def _get_decoder(self, encoder_states, line_memory, word_memory, helper, batch_size):
 		with tf.variable_scope(self._name):
 			with tf.variable_scope('decoder'):
 				# make the shape concrete to prevent ValueError caused by (?, ?, ?)
 				reshaped_line_memory = tf.reshape(line_memory,[batch_size, -1, self._embedding_size])
-				if self._pointer:
-					reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
-					self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory, hierarchy=self._hierarchy, word_softmax=self._word_softmax, line_softmax=self._line_softmax, soft_weight=self._soft_weight)
-					decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False, dropout=self._dropout, shift_size=self._shift_size, lba=self._lba)			
-					wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
-					decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
-				else:
-					self.attention_mechanism = tf.contrib.seq2seq.LuongAttention(self._embedding_size, reshaped_line_memory)
-					decoder_cell_with_attn = tf.contrib.seq2seq.AttentionWrapper(self.decoder_cell, self.attention_mechanism)
-					wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
-					decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
+				reshaped_word_memory = tf.reshape(word_memory,[batch_size, -1, self._sentence_size, self._embedding_size])
+				self.attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory, hierarchy=self._hierarchy, soft_weight=self._soft_weight)
+				decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, self.attention_mechanism, self._keep_prob, output_attention=False)			
+				wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
+				decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
 				return decoder
 
 	def _decoder_train(self, encoder_states, line_memory, word_memory=None):
@@ -510,10 +324,7 @@ class MemN2NGeneratorDialog(object):
 				answer_sizes = tf.reshape(self._answer_sizes,[-1])
 				helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
 				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
-				if self._pointer:
-					outputs,_,_,p_gens,_,_,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
-				else:
-					outputs,_,_ = tf.contrib.seq2seq.dynamic_decode(decoder)
+				outputs,_,_,p_gens,_,_,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
 				final_dists = outputs.rnn_output
 				max_length = tf.reduce_max(answer_sizes, reduction_indices=[0])
 				ans = self._answers[:, :max_length]
@@ -523,49 +334,41 @@ class MemN2NGeneratorDialog(object):
 				target_weights_eos = target_weights[:, max_length-1]
 				target_weights = target_weights[:, :max_length]
 
-				if self._pointer and self._p_gen_loss:
-					intersect_mask = self._intersection_mask[:, :max_length]
-					#p_gen_logits = tf.concat([1-p_gens, 50*p_gens], 2)
-					#p_gen_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=intersect_mask, logits=p_gen_logits)
-					#pgen_loss_comp = tf.reduce_sum(p_gen_loss * target_weights)
+				intersect_mask = self._intersection_mask[:, :max_length]
+				#p_gen_logits = tf.concat([1-p_gens, 50*p_gens], 2)
+				#p_gen_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=intersect_mask, logits=p_gen_logits)
+				#pgen_loss_comp = tf.reduce_sum(p_gen_loss * target_weights)
 
-					reshaped_p_gens=tf.reshape(tf.squeeze(p_gens), [-1])
-					p = tf.reshape(intersect_mask, [-1])
-					q = tf.clip_by_value(reshaped_p_gens,1e-20,1.0)
-					one_minus_q = tf.clip_by_value(1-reshaped_p_gens,1e-20,1.0)
-					p_gen_loss = p*tf.log(q) + (1-p)*tf.log(one_minus_q)
-					pgen_loss_comp = -tf.reduce_sum(p_gen_loss * tf.reshape(target_weights, [-1]))
+				reshaped_p_gens=tf.reshape(tf.squeeze(p_gens), [-1])
+				p = tf.reshape(intersect_mask, [-1])
+				q = tf.clip_by_value(reshaped_p_gens,1e-20,1.0)
+				one_minus_q = tf.clip_by_value(1-reshaped_p_gens,1e-20,1.0)
+				p_gen_loss = p*tf.log(q) + (1-p)*tf.log(one_minus_q)
+				pgen_loss_comp = -tf.reduce_sum(p_gen_loss * tf.reshape(target_weights, [-1]))
 
-					####
-					max_oov_len = tf.reduce_max(self._oov_sizes, reduction_indices=[0])
-					extended_vsize =  self._decoder_vocab_size + max_oov_len
-					y_pred = tf.clip_by_value(final_dists,1e-20,1.0)
-					y_true = tf.one_hot(ans, extended_vsize)
-					seq_loss_comp = -tf.reduce_sum(y_true*tf.log(y_pred))
-					####
-					#crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
-					#seq_loss_comp = tf.reduce_sum(crossent * target_weights)
-					#crossent = crossent[:, max_length-1]
-					#seq_loss_comp_eos = tf.reduce_sum(crossent * target_weights_eos)
-					
-					#loss = seq_loss_comp + self._eos_weight*seq_loss_comp_eos + self._p_gen_loss_weight*pgen_loss_comp
-					loss = seq_loss_comp + self._p_gen_loss_weight*pgen_loss_comp
+				####
+				max_oov_len = tf.reduce_max(self._oov_sizes, reduction_indices=[0])
+				extended_vsize =  self._decoder_vocab_size + max_oov_len
+				y_pred = tf.clip_by_value(final_dists,1e-20,1.0)
+				y_true = tf.one_hot(ans, extended_vsize)
+				seq_loss_comp = -tf.reduce_sum(y_true*tf.log(y_pred))
+				####
+				#crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
+				#seq_loss_comp = tf.reduce_sum(crossent * target_weights)
+				#crossent = crossent[:, max_length-1]
+				#seq_loss_comp_eos = tf.reduce_sum(crossent * target_weights_eos)
+				
+				#loss = seq_loss_comp + self._eos_weight*seq_loss_comp_eos + self._p_gen_loss_weight*pgen_loss_comp
+				loss = seq_loss_comp + self._p_gen_loss_weight*pgen_loss_comp
 
-					# crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
-					# seq_loss_comp = tf.reduce_sum(crossent * target_weights)
-					# crossent = crossent[:, max_length-1]
-					# seq_loss_comp_eos = tf.reduce_sum(crossent * target_weights_eos)
-					
-					# loss = seq_loss_comp + self._eos_weight*seq_loss_comp_eos + self._p_gen_loss_weight*pgen_loss_comp
+				# crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
+				# seq_loss_comp = tf.reduce_sum(crossent * target_weights)
+				# crossent = crossent[:, max_length-1]
+				# seq_loss_comp_eos = tf.reduce_sum(crossent * target_weights_eos)
+				
+				# loss = seq_loss_comp + self._eos_weight*seq_loss_comp_eos + self._p_gen_loss_weight*pgen_loss_comp
 
-					return loss, final_dists, seq_loss_comp, pgen_loss_comp, p_gens, intersect_mask
-				else:
-					crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=ans, logits=final_dists)
-					seq_loss_comp = tf.reduce_sum(crossent * target_weights)
-					pgen_loss_comp = tf.zeros_like(seq_loss_comp)
-					loss = seq_loss_comp
-	
-					return loss, final_dists, seq_loss_comp, pgen_loss_comp
+				return loss, final_dists, seq_loss_comp, pgen_loss_comp, p_gens, intersect_mask
 
 
 	def _decoder_runtime(self, encoder_states, line_memory, word_memory=None):
@@ -578,18 +381,12 @@ class MemN2NGeneratorDialog(object):
 				helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
 				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
 				
-				if self._pointer:
-					outputs,_,_, p_gens, hier, line, word = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
-				else:
-					outputs,_,_ = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=2*self._candidate_sentence_size)
+				outputs,_,_, p_gens, hier, line, word = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
 				final_dists = outputs.rnn_output
 
-			if self._pointer:
-				old_translations = outputs.sample_id
-				new_translations = tf.argmax(final_dists, axis=-1)
-				return old_translations, new_translations, hier, line, word, p_gens
-			else:
-				return outputs.sample_id
+			old_translations = outputs.sample_id
+			new_translations = tf.argmax(final_dists, axis=-1)
+			return old_translations, new_translations, hier, line, word, p_gens
 
 	def check_shape(self, name, array):
 		shape = array[0].shape
@@ -604,10 +401,9 @@ class MemN2NGeneratorDialog(object):
 		self.check_shape('Story Sizes: ', feed_dict[self._sentence_sizes])
 		self.check_shape('Queries: ', feed_dict[self._queries])
 		self.check_shape('Queries Sizes: ', feed_dict[self._query_sizes])
-		if self._pointer:
-			self.check_shape('oov ids: ', feed_dict[self._oov_ids])
-			self.check_shape('oov sizes: ', feed_dict[self._oov_sizes])
-			self.check_shape('intersection mask: ', feed_dict[self._intersection_mask])
+		self.check_shape('oov ids: ', feed_dict[self._oov_ids])
+		self.check_shape('oov sizes: ', feed_dict[self._oov_sizes])
+		self.check_shape('intersection mask: ', feed_dict[self._intersection_mask])
 		if self._char_emb:
 			self.check_shape('_sentence_tokens: ', feed_dict[self._sentence_tokens])
 			self.check_shape('_query_tokens: ', feed_dict[self._query_tokens])
@@ -623,14 +419,12 @@ class MemN2NGeneratorDialog(object):
 		"""
 		feed_dict = {}
 		feed_dict[self._stories] = batch.stories
-		feed_dict[self._story_positions] = batch.story_positions
 		feed_dict[self._queries] = batch.queries
 		feed_dict[self._sentence_sizes] = batch.story_sizes
 		feed_dict[self._query_sizes] = batch.query_sizes
-		if self._pointer:
-			feed_dict[self._oov_ids] = batch.oov_ids
-			feed_dict[self._oov_sizes] = batch.oov_sizes
-			feed_dict[self._intersection_mask] = batch.intersection_set
+		feed_dict[self._oov_ids] = batch.oov_ids
+		feed_dict[self._oov_sizes] = batch.oov_sizes
+		feed_dict[self._intersection_mask] = batch.intersection_set
 		if self._char_emb:
 			feed_dict[self._sentence_tokens] = batch.story_tokens
 			feed_dict[self._query_tokens] = batch.query_tokens

@@ -14,8 +14,7 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from sklearn.metrics import f1_score
 
-__all__ =  ["load_candidates", 
-            "get_decoder_vocab", 
+__all__ =  ["get_decoder_vocab", 
             "load_dialog_task", 
             "tokenize", 
             "pad_to_answer_size", 
@@ -24,7 +23,8 @@ __all__ =  ["load_candidates",
             "new_eval_score",
             "visualize_attention",
             "split_output",
-            "analyse_pgens"]
+            "analyse_pgens",
+            "create_batches"]
 
 ###################################################################################################
 #########                                  Global Variables                              ##########
@@ -40,70 +40,48 @@ EOS_INDEX = 3
 #########                                 Dialog Manipulators                            ##########
 ###################################################################################################
 
-def load_candidates(data_dir, task_id):
+def get_decoder_vocab(data_dir, task_id):
     ''' 
-        Load Candidate Responses 
-      '''
-    assert task_id > 0 and task_id < 9
-    candidates=[]
-    candid_dic={}
-    # Get Candidate File
-    if task_id==6:
-        candidates_f='dialog-babi-task6-dstc2-candidates.txt'
-    elif task_id==7:
-        candidates_f='dialog-babi-task7-camrest676-candidates.txt'
-    elif task_id==8:
-        candidates_f='dialog-babi-task8-kvret-candidates.txt'
-    else:
-        candidates_f='dialog-babi-candidates.txt'
-
-    with open(os.path.join(data_dir,candidates_f)) as f:
-        for i,line in enumerate(f):
-            candid_dic[line.strip().split(' ',1)[1]] = i
-            line=tokenize(line.strip())[1:]
-            candidates.append(line)
-    return candidates,candid_dic
-
-def get_decoder_vocab(data_dir, task_id, vocab_ext):
-    ''' 
-        Load Candidate Vocabulary Space for Decoder 
+        Load Vocabulary Space for Response-Decoder 
     '''
     assert task_id > 0 and task_id < 9
     decoder_vocab_to_index={}
-    decoder_index_to_vocab={}
-    # Pad Symbol
-    decoder_vocab_to_index['PAD']=PAD_INDEX
-    decoder_index_to_vocab[PAD_INDEX]='PAD'
-    # Unknown Symbol
-    decoder_vocab_to_index['UNK']=UNK_INDEX
-    decoder_index_to_vocab[UNK_INDEX]='UNK'
-    # Start Symbol
-    decoder_vocab_to_index['GO_SYMBOL']=GO_SYMBOL_INDEX
-    decoder_index_to_vocab[GO_SYMBOL_INDEX]='GO_SYMBOL'
-    # End Symbol
-    decoder_vocab_to_index['EOS']=EOS_INDEX
-    decoder_index_to_vocab[EOS_INDEX]='EOS'
+    decoder_vocab_to_index['PAD']=PAD_INDEX             # Pad Symbol
+    decoder_vocab_to_index['UNK']=UNK_INDEX             # Unknown Symbol
+    decoder_vocab_to_index['GO_SYMBOL']=GO_SYMBOL_INDEX # Start Symbol
+    decoder_vocab_to_index['EOS']=EOS_INDEX             # End Symbol
 
-    # Jan 9: decode vocab is now generated from train responses and not from candidate file
     files = os.listdir(data_dir)
     files = [os.path.join(data_dir, f) for f in files]
     s = 'dialog-babi-task{}-'.format(task_id)
-    train_file = [f for f in files if s in f and vocab_ext in f][0]
-    
+    train_file = [f for f in files if s in f and 'trn' in f][0]
     candidate_sentence_size = 0
     responses = get_responses(train_file)
     for response in responses:
         line=tokenize(response.strip())
-        if len(line) > candidate_sentence_size:
-            candidate_sentence_size = len(line)
+        candidate_sentence_size = max(len(line), candidate_sentence_size)
         for word in line:
             if word not in decoder_vocab_to_index:
                 index = len(decoder_vocab_to_index)
                 decoder_vocab_to_index[word]=index
-                decoder_index_to_vocab[index]=word
-    return decoder_vocab_to_index,decoder_index_to_vocab,candidate_sentence_size+1
+    decoder_index_to_vocab = {v: k for k, v in decoder_vocab_to_index.items()}
+    return decoder_vocab_to_index, decoder_index_to_vocab, candidate_sentence_size+3 #1(EOS) 2(#u/r) 3(#turn)
 
-def load_dialog_task(data_dir, task_id, vocab_ext):
+def get_responses(file):
+    '''
+        Parse dialogs provided in the babi tasks format
+    '''
+    responses=[]
+    with open(file) as f:
+        for line in f.readlines():
+            line=line.strip()
+            if line and '\t' in line:
+                u, r = line.split('\t')
+                responses.append(r)
+    return responses
+
+
+def load_dialog_task(data_dir, task_id):
     ''' 
         Load Train, Test, Validation Dialogs 
     '''
@@ -112,20 +90,17 @@ def load_dialog_task(data_dir, task_id, vocab_ext):
     files = [os.path.join(data_dir, f) for f in files]
     s = 'dialog-babi-task{}-'.format(task_id)
     train_file = [f for f in files if s in f and 'trn' in f][0]
-    if task_id < 6:
-        oov_file = [f for f in files if s in f and 'tst-OOV' in f][0]
     test_file = [f for f in files if s in f and 'tst' in f and 'OOV' not in f][0]
     val_file = [f for f in files if s in f and 'dev' in f][0]
-    mod_file = [f for f in files if s in f and vocab_ext in f][0]
-    train_data = get_dialogs(train_file)
-    test_data = get_dialogs(test_file)
-    val_data = get_dialogs(val_file)
-    if task_id > 5:
-        oov_data = None
+    train_data = parse_dialogs(train_file)
+    test_data = parse_dialogs(test_file)
+    val_data = parse_dialogs(val_file)
+    if task_id < 6:
+        oov_file = [f for f in files if s in f and 'tst-OOV' in f][0]
+        oov_data = parse_dialogs(oov_file)
     else:
-        oov_data = get_dialogs(oov_file)
-    mod_data = get_dialogs(mod_file)
-    return train_data, test_data, val_data, oov_data, mod_data
+        oov_data = None        
+    return train_data, test_data, val_data, oov_data
 
 def tokenize(sent):
     '''
@@ -134,74 +109,61 @@ def tokenize(sent):
         ['Bob', 'dropped', 'the', 'apple', '.', 'Where', 'is', 'the', 'apple']
     '''
     sent=sent.lower()
-    if sent=='<silence>':
-        return [sent]
-    result=[x.strip() for x in re.split('(\W+)?', sent) if x.strip()] # and x.strip() not in stop_words]
+    if sent=='<silence>': return [sent]
+    result=[x.strip() for x in re.split('(\W+)?', sent) if x.strip()]
     if not result:
         result=['<silence>']
     if result[-1]=='.' or result[-1]=='?' or result[-1]=='!':
         result=result[:-1]
     return result
 
-def get_responses(f):
+def parse_dialogs(file):
     '''
         Parse dialogs provided in the babi tasks format
     '''
-    responses=[]
-    with open(f) as f:
-        lines=f.readlines()
-        for line in lines:
-            line=line.strip()
-            if line:
-                nid, line = line.split(' ', 1)
-                nid = int(nid)
-                if '\t' in line:
-                    u, r = line.split('\t')
-                    responses.append(r)
-    return responses
-
-def parse_dialogs_per_response(lines):
-    '''
-        Parse dialogs provided in the babi tasks format
-    '''
-    data=[]
-    context=[]
-    u=None
-    r=None
-    dialog_id=1
-    for line in lines:
+    data=[]; context=[]
+    dialog_id=1; turn_id=1
+    for line in open(file).readlines():
         line=line.strip()
         if line:
             nid, line = line.split(' ', 1)
             nid = int(nid)
             if '\t' in line:
-                u, r = line.split('\t')
-                u = tokenize(u)
-                r = tokenize(r)
-                data.append((context[:],u[:],r[:],dialog_id))
-                u.append('$u')
-                u.append('#'+str(nid))
-                r.append('$r')
-                r.append('#'+str(nid))
-                context.append(u)
-                context.append(r)
+                u, r = map(tokenize, line.split('\t'))
+                data.append((context, u, r, dialog_id, turn_id))
+                u.extend(['$u', '#{}'.format(nid)])
+                r.extend(['$r', '#{}'.format(nid)])
+                context.append(u); context.append(r)
+                turn_id += 1
             else:
                 r=tokenize(line)
-                r.append('$db')
-                r.append('#'+str(nid))
+                r.extend(['$db', '#{}'.format(nid)])
                 context.append(r)
         else:
-            dialog_id=dialog_id+1
-            context=[] # clear context
+            # clear context / start of new dialog
+            dialog_id+=1; turn_id=1
+            context=[]
     return data
 
-def get_dialogs(f):
+###################################################################################################
+#########                                     Data Batching                              ##########
+###################################################################################################
+
+def create_batches(data, batch_size):
     '''
-        Given a file name, read the file, retrieve the dialogs, 
-        and then convert the sentences into a single dialog.
+        Helps to partition the dialog into three groups
+        1) Dialogs occuring before an API call
+        2) Dialogs that have an API call
+        3) Dialogs that occur after and API call
     '''
-    with open(f) as f:
-        return parse_dialogs_per_response(f.readlines())
+    size = len(data.stories)
+    batches = zip(range(0, size - batch_size, batch_size),
+                  range(batch_size, size, batch_size))
+    batches = [(start, end) for start, end in batches]
+    # fix to include last batch
+    if batches[-1][1] < size:
+        batches.append((batches[-1][1], size))
+    return batches
 
 
 ###################################################################################################

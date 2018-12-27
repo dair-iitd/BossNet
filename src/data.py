@@ -11,48 +11,37 @@ EOS_INDEX = 3
 
 class Data(object):
 
-    def __init__(self,
-                 data, 
-                 word_idx, 
-                 idx_word,
-                 sentence_size, 
-                 batch_size,
-                 max_memory_size, 
-                 decoder_vocab, 
-                 candidate_sentence_size,
-                 char_emb_length,
-                 char_overlap,
-                 copy_first):
+    def __init__(self, data, args):
+        self._db_vocab_id = args.word_idx.get('$db', -1)
+        self._decode_vocab_size = len(args.decode_idx)
+        self._char_set = [] # For tokenize function
 
-        self._decode_vocab_size = len(decoder_vocab)
-        self._encoder_vocab = word_idx.keys()
-        self._idx_word = idx_word
-        if '$db' in word_idx:
-            self._db_vocab_id = word_idx['$db']
-        else:
-            self._db_vocab_id = -1
+        ## Sort Dialogs based on turn_id
+        self._extract_data_items(data)
         
-        self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids = \
-            self._extract_data_items(data)
-        self._stories, self._story_sizes, self._story_tokens, self._story_word_sizes, self._read_stories, self._oov_ids, self._oov_sizes, self._oov_words, self._token_size, self._story_positions, self._story_vocabs = \
-            self._vectorize_stories(self._stories_ext, word_idx, sentence_size, batch_size, self._decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap, copy_first)
-        self._queries, self._query_sizes, self._query_tokens, self._query_word_sizes, self._read_queries = \
-            self._vectorize_queries(self._queries_ext, word_idx, sentence_size, char_emb_length, char_overlap)
-        # Jan 6 : added answers with UNKs
-        self._answers, self._answer_sizes, self._read_answers, self._answers_emb_lookup = \
-            self._vectorize_answers(self._answers_ext, decoder_vocab, candidate_sentence_size, self._oov_words, self._decode_vocab_size, copy_first)
-        self._decode_to_encode_db_vocab_map, self._db_words_in_decoder_vocab, self._db_words_in_encoder_vocab, self._entity_map, self._entity_context_map = self._populate_db_vocab_structures(self._stories_ext, self._answers_ext, word_idx, decoder_vocab)
-        self._intersection_set = self._intersection_set_mask(self._answers, decoder_vocab)
-        self._entities, self._entities_kb, self._entities_context = self._get_entity_indecies(self._entity_map, self._entity_context_map, self._read_answers)
+        ## Process Stories
+        self._vectorize_stories(self._stories_ext, args)
+
+        ## Process Queries
+        self._vectorize_queries(self._queries_ext, args)
+        
+        ## Process Answers
+        self._vectorize_answers(self._answers_ext, args)
+        
+        ## Create DB word mappings to Vocab
+        self._entity_set = self._populate_entity_set(self._stories_ext, self._answers_ext)
+        
+        ## Get indicies where copying must take place
+        self._intersection_set = self._intersection_set_mask(self._answers, self._entity_set, args)
+        
+        ## Get entities at response level
+        self._entities = self._get_entity_indecies(self._read_answers, self._entity_set)
 
         
+    ## Dialogs ##
     @property
     def stories(self):
         return self._stories
-
-    @property
-    def story_positions(self):
-        return self._story_positions
 
     @property
     def queries(self):
@@ -61,6 +50,11 @@ class Data(object):
     @property
     def answers(self):
         return self._answers
+
+    ## Sizes ##
+    @property
+    def story_lengths(self):
+        return self._story_lengths
 
     @property
     def story_sizes(self):
@@ -71,29 +65,10 @@ class Data(object):
         return self._query_sizes
 
     @property
-    def answers_emb_lookup(self):
-        return self._answers_emb_lookup
-
-    @property
     def answer_sizes(self):
         return self._answer_sizes
 
-    @property
-    def story_tokens(self):
-        return self._story_tokens
-
-    @property
-    def query_tokens(self):
-        return self._query_tokens
-
-    @property
-    def story_word_sizes(self):
-        return self._story_word_sizes
-
-    @property
-    def query_word_sizes(self):
-        return self._query_word_sizes
-
+    ## Read Dialogs ##
     @property
     def readable_stories(self):
         return self._read_stories
@@ -106,6 +81,33 @@ class Data(object):
     def readable_answers(self):
         return self._read_answers
 
+    ## Char Tokens ##
+    @property
+    def story_tokens(self):
+        return self._story_tokens
+
+    @property
+    def query_tokens(self):
+        return self._query_tokens
+
+    ## Char Tokens Sizes ##
+    @property
+    def story_word_sizes(self):
+        return self._story_word_sizes
+
+    @property
+    def query_word_sizes(self):
+        return self._query_word_sizes
+
+    @property
+    def token_size(self):
+        return self._token_size
+
+    @property
+    def char_set(self):
+        return self._char_set
+
+    ## OOV ##
     @property
     def oov_ids(self):
         return self._oov_ids
@@ -118,398 +120,271 @@ class Data(object):
     def oov_words(self):
         return self._oov_words
 
+    ## Dialog Info ##
     @property
     def dialog_ids(self):
         return self._dialog_ids
 
     @property
-    def decode_vocab_size(self):
-        return self._decode_vocab_size
+    def turn_ids(self):
+        return self._turn_ids
 
     @property
-    def token_size(self):
-        return self._token_size
+    def db_vocab_id(self):
+        return self._db_vocab_id
 
+    ## Decode Variables ##
     @property
-    def intersection_set(self):
-        return self._intersection_set
+    def answers_emb_lookup(self):
+        return self._answers_emb_lookup
 
+    ## DB(entity) Words and Vocab Maps ##
     @property
-    def decode_to_encode_db_vocab_map(self):
-        return self._decode_to_encode_db_vocab_map
-        
-    @property
-    def db_words_in_decoder_vocab(self):
-        return self._db_words_in_decoder_vocab
-
-    @property
-    def db_words_in_encoder_vocab(self):
-        return self._db_words_in_encoder_vocab
-
-    @property
-    def entity_words(self):
-        return self._entity_map
+    def entity_set(self):
+        return self._entity_set
 
     @property
     def entities(self):
         return self._entities
 
     @property
-    def entities_kb(self):
-        return self._entities_kb
-
-    @property
-    def entities_context(self):
-        return self._entities_context
-
-    @property
-    def db_vocab_id(self):
-        return self._db_vocab_id
-
-    @property
-    def encoder_vocab(self):
-        return self._encoder_vocab
-
-    @property
-    def idx2word(self):
-        return self._idx_word
+    def responses(self):
+        return self._responses
     
-    def _populate_db_vocab_structures(self, stories, answers, word_idx, decoder_vocab):
-        decode_to_encode_db_vocab_map = {}
-        db_words_in_decoder_vocab = {}
-        db_words_in_encoder_vocab = {}
-        entity_map = []
-        entity_context_map = []
-        for _, story in enumerate(stories):
-            for _, sentence in enumerate(story, 1):
-                if '$db' in sentence:
-                    for w in sentence[:-2]:
-                        if w not in entity_map:
-                            entity_map.append(w)
-                        if not w.startswith('r_'):
-                            if w in word_idx and w in decoder_vocab and decoder_vocab[w] not in decode_to_encode_db_vocab_map:
-                                decode_to_encode_db_vocab_map[decoder_vocab[w]]=word_idx[w]
-                                #print(w + " " + str(word_idx[w]) + " " + str(decoder_vocab[w]))
-                            if w in word_idx:
-                                db_words_in_encoder_vocab[word_idx[w]] = w
-                            if w in decoder_vocab:
-                                db_words_in_decoder_vocab[decoder_vocab[w]] = w
-                                
-        for _,answer in enumerate(answers):
-            if 'api_call' in answer:
-                for w in answer[1:]:
-                    if w not in entity_map:
-                        entity_map.append(w)
-                    if w not in entity_context_map:
-                        entity_context_map.append(w)
-                    if w in word_idx and w in decoder_vocab and decoder_vocab[w] not in decode_to_encode_db_vocab_map:
-                        decode_to_encode_db_vocab_map[decoder_vocab[w]]=word_idx[w]
-                        #print(w + " " + str(word_idx[w]) + " " + str(decoder_vocab[w]))
-                    if w in word_idx:
-                        db_words_in_encoder_vocab[word_idx[w]] = w
-                    if w in decoder_vocab:
-                        db_words_in_decoder_vocab[decoder_vocab[w]] = w
-                        
-        #print(db_words_in_decoder_vocab)
-        #print(db_words_in_encoder_vocab)
-        return decode_to_encode_db_vocab_map, db_words_in_decoder_vocab, db_words_in_encoder_vocab, entity_map, entity_context_map
-
+    ## PGen Mask
+    @property
+    def intersection_set(self):
+        return self._intersection_set
 
     def _extract_data_items(self, data):
-        data.sort(key=lambda x:len(x[0]),reverse=True)
-        stories = [x[0] for x in data]
-        queries = [x[1] for x in data]
-        answers = [x[2] for x in data]
-        dialog_id = [x[3] for x in data]
-        return stories, queries, answers, dialog_id
+        '''
+            Sorts the dialogs and seperates into respective lists
+        '''
+        data.sort(key=lambda x: len(x[0]), reverse=True)    # Sort based on dialog size
+        self._stories_ext, self._queries_ext, self._answers_ext, self._dialog_ids, self._turn_ids = zip(*data)
 
-    def _index(self, token, size):
-        # if token in self._token_list:
-        #     return self._token_list.index(token)
-        # else:
-        #     self._token_list += [token]
-        #     return len(self._token_list)
-
-        index_list = [ord(c) for c in token]
-        index = 0
-        for i in range(size):
-            index = index*(256) + index_list[i]
-        return index
-
-    def _tokenize(self, word, size, overlap):
-        tokens = []
-        start = 0
-        end = size
-        if overlap:
-            while len(word) < size:
-                word += " " 
+    def _index(self, token):
+        '''
+            Maintains a list of seen charater tokens and assigns corresponding token ids
+        '''
+        if token in self._char_set:
+            return self._char_set.index(token) + 1
         else:
-            while (len(word) % size) > 0:
-                word += " "
-            
+            self._char_set.append(token)
+            return len(self._char_set)
+
+    def _tokenize(self, word, size, max_length=None):
+        '''
+            Breaks each sentence into a list of tokens of given size
+        '''
+        tokens = []
+        start = 0; end = size
+        while len(word) < size: word += " " 
         while end <= len(word):
-            token = self._index(word[start:end], size)
-            tokens.append(token)
-            if overlap:
-                start += 1; end += 1
-            else:
-                start += size; end += size
+            tokens.append(self._index(word[start:end]))
+            start += 1; end += 1;
+        if max_length and len(tokens) > max_length:  
+            return tokens[:max_length]
+        else: return tokens
 
-        return tokens
-
-    def _vectorize_stories(self, stories, word_idx, sentence_size, batch_size, decode_vocab_size, max_memory_size, decoder_vocab, char_emb_length, char_overlap, copy_first):
-        S = []
-        SP = []
-        SZ = []
-        Word_tokens = []
-        SWZ = []
-        S_in_readable_form = []
-        OOV_ids = []
-        OOV_size = []
-        OOV_words = []
-        S_VOCAB = []
+    def _vectorize_stories(self, stories, args):     
+        '''
+            Maps each story into word and character tokens and assigns them ids
+        '''   
+        self._stories = []              # Encoded Stories (using word_idx)
+        self._story_lengths = []        # Story Lengths
+        self._story_sizes = []          # Story sentence sizes
+        self._story_word_sizes = []     # Story word sizes
+        self._story_tokens = []         # Character Tokens of Stories
+        self._read_stories = []         # Readable Stories
+        self._oov_ids = []              # The index of words for copy in Response-Decoder
+        self._oov_sizes = []            # The size of OOV words set in Response-Decoder
+        self._oov_words = []            # The OOV words in the Stories
+        self._responses = {}
 
         for i, story in enumerate(stories):
-            if i % batch_size == 0:
-                memory_size = max(1, min(max_memory_size, len(story)))
-            ss = []
-            sps = []
-            sizes = []
-            tokens = []
-            word_sizes = []
-            story_string = []
-            oov_ids = []
-            oov_words = []
-            vocab = set()
+            if i % args.batch_size == 0:
+                memory_size = max(1, min(args.memory_size, len(story)))
+            story_sentences = []    # Encoded Sentences of Single Story
+            sentence_sizes = []     # List of lengths of each sentence of a Single Story
+            word_sizes = []         # 2D List of word lengths of sentences of a Single Story
+            tokens = []             # 3D list of character tokens of words of a Single Story
+            story_string = []       # Readable Sentences of a Single Story
+            oov_ids = []            # The ids of words in OOV index for copy
+            oov_words = []          # The OOV words in a Single Story
 
-            # Jan 6 : changed index to k
-            for k, sentence in enumerate(story, 1):
-                if len(sentence) > sentence_size:
-                    sentence = sentence[:sentence_size]
-                ls = max(0, sentence_size - len(sentence))
-                # Jan 6 : words not in vocab are changed from NIL to UNK
-                ss.append([word_idx[w] if w in word_idx else UNK_INDEX for w in sentence] + [0] * ls)
-                sps.append(list(np.arange(1,len(sentence)+1)) + [0] * ls)
-                sizes.append(len(sentence))
-                word_tokens = [self._tokenize(w, char_emb_length, char_overlap) for w in sentence] + [[]] * ls
-                tokens.append(word_tokens)
+            self._responses[i] = []
+            for sentence in story:
+                pad = max(0, args.sentence_size - len(sentence))
+                story_sentences.append([args.word_idx[w] if w in args.word_idx else UNK_INDEX for w in sentence] + [0] * pad)
+                sentence_sizes.append(len(sentence))
+                word_tokens = [self._tokenize(w, args.char_emb_length) for w in sentence] + [[]] * pad
                 word_sizes.append([len(w) for w in word_tokens])
-                story_element = [str(x) for x in sentence] + [''] * ls
-                story_string.append(story_element)
+                tokens.append(word_tokens)
+                story_string.append([str(x) for x in sentence] + [''] * pad)
 
                 oov_sentence_ids = []
-                
-                #if copy_first:
-                #   oov_sentence_ids.append(decode_vocab_size + len(oov_words))
-                #   oov_words.append(SENTINAL_SURFACE_FORM)
-
                 for w in sentence:
-                    vocab.add(w)
-                    if w not in decoder_vocab:
+                    if w not in args.decode_idx:
                         if w not in oov_words:
-                            oov_sentence_ids.append(decode_vocab_size + len(oov_words))
+                            oov_sentence_ids.append(self._decode_vocab_size + len(oov_words))
                             oov_words.append(w)
                         else:
-                            oov_sentence_ids.append(decode_vocab_size + oov_words.index(w))
+                            oov_sentence_ids.append(self._decode_vocab_size + oov_words.index(w))
                     else:
-                        oov_sentence_ids.append(decoder_vocab[w])
-                oov_sentence_ids = oov_sentence_ids + [PAD_INDEX] * ls
+                        oov_sentence_ids.append(args.decode_idx[w])
+                oov_sentence_ids = oov_sentence_ids + [PAD_INDEX] * pad
                 oov_ids.append(oov_sentence_ids)
 
-
             # take only the most recent sentences that fit in memory
-            ss = ss[::-1][:memory_size][::-1]
-            sps = sps[::-1][:memory_size][::-1]
-            oov_ids = oov_ids[::-1][:memory_size][::-1]
-            sizes = sizes[::-1][:memory_size][::-1]
-            tokens = tokens[::-1][:memory_size][::-1]
-            word_sizes = word_sizes[::-1][:memory_size][::-1]
-            story_string = story_string[::-1][:memory_size][::-1]
+            if len(story_sentences) > args.memory_size:
+                story_sentences = story_sentences[::-1][:args.memory_size][::-1]
+                sentence_sizes = sentence_sizes[::-1][:args.memory_size][::-1]
+                word_sizes = word_sizes[::-1][:args.memory_size][::-1]
+                tokens = tokens[::-1][:args.memory_size][::-1]
+                story_string = story_string[::-1][:args.memory_size][::-1]
+                oov_ids = oov_ids[::-1][:args.memory_size][::-1]
+            else: # pad to memory_size
+                mem_pad = max(0, memory_size - len(story_sentences))
+                for _ in range(mem_pad):
+                    story_sentences.append([0] * args.sentence_size)
+                    sentence_sizes.append(0)
+                    word_sizes.append([0] * args.sentence_size)
+                    tokens.append([[]] * args.sentence_size)
+                    story_string.append([''] * args.sentence_size)
+                    oov_ids.append([0] * args.sentence_size)
 
-            # pad to memory_size
-            lm = max(0, memory_size - len(ss))
-            for _ in range(lm):
-                ss.append([0] * sentence_size)
-                sps.append([0] * sentence_size)
-                oov_ids.append([0] * sentence_size)
-                sizes.append(0)
-                word_sizes.append([0] * sentence_size)
-                tokens.append([[]] * sentence_size)
-                story_string.append([''] * sentence_size)
-
-            S.append(np.array(ss))
-            SP.append(np.array(sps))
-            SZ.append(np.array(sizes))
-            Word_tokens.append(tokens)
-            SWZ.append(np.array(word_sizes))
-            S_in_readable_form.append(np.array(story_string))
-            OOV_ids.append(np.array(oov_ids))
-            OOV_size.append(np.array(len(oov_words)))
-            OOV_words.append(np.array(oov_words))
-            S_VOCAB.append(vocab)
+            self._stories.append(np.array(story_sentences))
+            self._story_lengths.append(len(story))
+            self._story_sizes.append(np.array(sentence_sizes))
+            self._story_word_sizes.append(np.array(word_sizes))
+            self._story_tokens.append(tokens)
+            self._read_stories.append(np.array(story_string))
+            self._oov_ids.append(np.array(oov_ids))
+            self._oov_sizes.append(np.array(len(oov_words)))
+            self._oov_words.append(oov_words)
             
-        max_token_size = 0
-        for size in SWZ:
-            token_size = np.amax(np.amax(size))
-            if token_size > max_token_size:
-                max_token_size = token_size
-        padded_tokens = []
-        for story in Word_tokens:
+        self._token_size = 0
+        for size in self._story_word_sizes: 
+            self._token_size = max(np.amax(np.amax(size)), self._token_size)
+        
+        Padded_Word_Tokens = []
+        for story in self._story_tokens:
             pad_stories = []
             for token in story:
                 pad_token = []
                 for token_list in token:
-                    token_list = token_list + [0]*(max_token_size - len(token_list))
+                    token_list = token_list + [0]*(self._token_size - len(token_list))
                     pad_token.append(token_list)
                 pad_stories.append(pad_token)
-            padded_tokens.append(np.array(pad_stories))
+            Padded_Word_Tokens.append(np.array(pad_stories))
+        self._story_tokens = Padded_Word_Tokens
 
-        return S, SZ, padded_tokens, SWZ, S_in_readable_form, OOV_ids, OOV_size, OOV_words, max_token_size, SP, S_VOCAB
-
-    def _vectorize_queries(self, queries, word_idx, sentence_size, char_emb_length, char_overlap):
-        Q = []
-        QZ = []
-        Word_tokens = []
-        QWZ = []
-        Q_in_readable_form = []
+    def _vectorize_queries(self, queries, args):
+        '''
+            Maps each query into word and character tokens and assigns them ids
+        '''  
+        self._queries = [] 
+        self._query_sizes = []
+        self._query_word_sizes = []
+        self._query_tokens = []
+        self._read_queries = []
 
         for i, query in enumerate(queries):
-            if len(query) > sentence_size:
-                    query = query[:sentence_size]
-            lq = max(0, sentence_size - len(query))
-            # Jan 6 : words not in vocab are changed from NIL to UNK
-            q = [word_idx[w] if w in word_idx else UNK_INDEX for w in query] + [0] * lq
-            tokens = [self._tokenize(w, char_emb_length, char_overlap) for w in query] + [[]] * lq
-            qw = [len(w) for w in tokens]
+            pad = max(0, args.sentence_size - len(query))
+            query_sentence = [args.word_idx[w] if w in args.word_idx else UNK_INDEX for w in query] + [0] * pad
+            tokens = [self._tokenize(w, args.char_emb_length) for w in query] + [[]] * pad
+            token_size = [len(w) for w in tokens]
 
-            Q.append(np.array(q))
-            QZ.append(np.array([len(query)]))
-            Word_tokens.append(tokens)
-            QWZ.append(np.array(qw))
-            Q_in_readable_form.append(' '.join([str(x) for x in query]))
+            self._queries.append(np.array(query_sentence))
+            self._query_sizes.append(np.array([len(query)]))
+            self._query_word_sizes.append(np.array(token_size))
+            self._query_tokens.append(tokens)
+            self._read_queries.append(' '.join([str(x) for x in query]))
 
-        max_token_size = self._token_size
-        padded_tokens = []
-        for token in Word_tokens:
-            pad_token = []
-            for token_list in token:
-                token_list = token_list + [0]*(max_token_size - len(token_list))
-                pad_token.append(token_list)
-            padded_tokens.append(np.array(pad_token))
+        Padded_Word_Tokens = []
+        for token_list in self._query_tokens:
+            Padded_Word_Tokens.append(np.array([token + [0]*(self._token_size - len(token)) for token in token_list]))
+        self._query_tokens = Padded_Word_Tokens
 
-        return Q, QZ, padded_tokens, QWZ, Q_in_readable_form
-
-    def _vectorize_answers(self, answers, decoder_vocab, candidate_sentence_size, OOV_words, decode_vocab_size, copy_first):
-        A = []
-        AZ = []
-        # Jan 6 : added answers with UNKs
-        A_for_embeddding_lookup = []
-        A_in_readable_form = []
+    def _vectorize_answers(self, answers, args):
+        '''
+            Maps each story into word tokens and assigns them ids
+        '''   
+        self._answers = []
+        self._answer_sizes = []
+        self._read_answers = []
+        self._answers_emb_lookup = []
 
         for i, answer in enumerate(answers):
-            if len(answer) > candidate_sentence_size-1:
-                    answer = answer[:candidate_sentence_size-1]
-            aq = max(0, candidate_sentence_size - len(answer) - 1)
-            a = []
+            pad = max(0, args.candidate_sentence_size - len(answer) - 1)
+            answer_sentence = []
             a_emb_lookup = []
             for w in answer:
-                if w in decoder_vocab:
-                    a.append(decoder_vocab[w])
-                    a_emb_lookup.append(decoder_vocab[w])
-                elif w in OOV_words[i]:
-                    a.append(decode_vocab_size + OOV_words[i].tolist().index(w))
+                if w in args.decode_idx:
+                    answer_sentence.append(args.decode_idx[w])
+                    a_emb_lookup.append(args.decode_idx[w])
+                elif w in self._oov_words[i]:
+                    answer_sentence.append(self._decode_vocab_size + self._oov_words[i].index(w))
                     a_emb_lookup.append(UNK_INDEX)
                 else:
-                    a.append(UNK_INDEX)
+                    answer_sentence.append(UNK_INDEX)
                     a_emb_lookup.append(UNK_INDEX)
-            a = a + [EOS_INDEX] + [PAD_INDEX] * aq
-            a_emb_lookup = a_emb_lookup + [EOS_INDEX] + [PAD_INDEX] * aq
+            answer_sentence = answer_sentence + [EOS_INDEX] + [PAD_INDEX] * pad
+            a_emb_lookup = a_emb_lookup + [EOS_INDEX] + [PAD_INDEX] * pad
+            self._answers.append(np.array(answer_sentence))
+            self._answer_sizes.append(np.array([len(answer)+1]))
+            self._read_answers.append(' '.join([str(x) for x in answer]))
+            self._answers_emb_lookup.append(np.array(a_emb_lookup))
 
-            A.append(np.array(a))
-            A_for_embeddding_lookup.append(np.array(a_emb_lookup))
-            AZ.append(np.array([len(answer)+1]))
-            A_in_readable_form.append(' '.join([str(x) for x in answer]))
-
-        return A, AZ, A_in_readable_form, A_for_embeddding_lookup
-
-    def _intersection_set_mask(self, answers, decoder_vocab):
-        mask = []
-        index = 0
-
-        inv_index = {}
-        for word, idx in decoder_vocab.items():
-            inv_index[idx]=word
-
-        db_vocab = set(self._db_words_in_decoder_vocab.keys())
+    def _populate_entity_set(self, stories, answers):
+        '''
+            Create a set of all entity words seen
+        '''
+        entity_set = set()                  # Maintain a set of entities seen
+        for story in stories:
+            for sentence in story:
+                if '$db' in sentence:
+                    for w in sentence[:-2]:
+                        if w not in entity_set:
+                            entity_set.add(w)
+                                
         for answer in answers:
-            '''
-            story_words = self._story_vocabs[index]
-            vocab = set()
-            for word in story_words:
-                if word in decoder_vocab:
-                    vocab.add(decoder_vocab[word])
-            '''
-            vocab = set(answer).intersection(db_vocab)
-            #print(answer)
-            #for v in vocab:
-            #    print(self._db_words_in_decoder_vocab[v])
-            #print("------")
+            if 'api_call' in answer:
+                for w in answer[1:]:
+                    if w not in entity_set:
+                        entity_set.add(w)
+        return entity_set
 
-            dialog_mask = [0.0 if (x in vocab or x not in inv_index) else 1.0 for x in answer]
+    def _intersection_set_mask(self, answers, entity_set, args):
+        '''
+            Create a mask which tracks the postions to copy a DB word
+        '''
+        mask = []
+        for i, answer in enumerate(answers):
+            vocab = set(answer).intersection(entity_set)
+            dialog_mask = [0.0 if (x in vocab or x not in args.idx_decode) else 1.0 for x in answer]
             mask.append(np.array(dialog_mask))
-            index+=1
         return mask
-    
-    # the vocab returned is in encoder vocab space
-    def _get_db_output_intersection_vocab(self, answer, decode_to_encode_db_vocab_map):
-        output_decode_vocab = set(answer.tolist())
-        vocab = set()
-        for w in output_decode_vocab:
-            if w in decode_to_encode_db_vocab_map:
-                vocab.add(decode_to_encode_db_vocab_map[w])
-        return vocab
-    
-    def _get_entity_indecies(self, entity_map, entity_context_map, read_answers):
-        entities = []
-        entities_kb = []
-        entities_context = []
-        for ans in read_answers:
-            ent = []
-            kb = []
-            context = []
-            for i, word in enumerate(ans.split()):
-                if word in entity_map:
-                    ent.append(i)
-                    if word in entity_context_map:
-                        context.append(i)
-                    else:
-                        kb.append(i)
-            entities.append(ent)
-            entities_kb.append(kb)
-            entities_context.append(context)
 
-        return entities, entities_kb, entities_context
+    def _get_entity_indecies(self, read_answers, entity_set):
+        '''
+            Get list of entity indecies in each Dialog Response
+        '''
+        return [np.array([i for i, word in enumerate(ans.split()) if word in entity_set ]) for ans in read_answers]
+    
 
 class Batch(Data):
 
-    def __init__(self, data, start, end, unk_size=0, word_drop=False, word_drop_prob=0.0):
-
-        self._unk_size = unk_size
+    def __init__(self, data, start, end, args):
 
         self._stories = data.stories[start:end]
-
-        self._story_positions = data.story_positions[start:end]
 
         self._queries = data.queries[start:end]
 
         self._answers = data.answers[start:end]
 
-        # Jan 6 : added answers with UNKs
         self._answers_emb_lookup = data.answers_emb_lookup[start:end]
-
-        if word_drop:
-            #self._stories, self._queries = self._random_unk(self._stories, self._queries, self._answers, data.encoder_vocab)
-            self._stories, self._queries = self._all_db_to_unk(self._stories, self._queries, data.db_vocab_id, data.db_words_in_encoder_vocab, word_drop_prob)
 
         self._story_sizes = data.story_sizes[start:end]
 
@@ -520,9 +395,6 @@ class Batch(Data):
         self._story_tokens = data.story_tokens[start:end]
         
         self._token_size = data.token_size
-
-        if word_drop:
-            self._story_tokens = self._get_char_drop_tokens(self._stories, data.idx2word)
 
         self._query_tokens = data.query_tokens[start:end]
 
@@ -547,67 +419,46 @@ class Batch(Data):
         self._intersection_set = data.intersection_set[start:end]
 
         self._entities = data.entities[start:end]
-        self._entities_kb = data.entities_kb[start:end]
-        self._entities_context = data.entities_context[start:end]
 
-    def _get_char_drop_tokens(self, stories, idx2word):
-        Word_tokens = []
-        for i, story in enumerate(stories):
-            tokens = []
-            for k, sentence in enumerate(story, 1):
-                word_tokens = [self._tokenize(idx2word[w], 1, True) for w in sentence]
-                tokens.append(word_tokens)
-            Word_tokens.append(tokens)
+        self._entity_set = data.entity_set
 
-        padded_tokens = []
-        for story in Word_tokens:
-            pad_stories = []
-            for token in story:
-                pad_token = []
-                for token_list in token:
-                    token_list = token_list + [0]*(self._token_size - len(token_list))
-                    pad_token.append(token_list)
-                pad_stories.append(pad_token)
-            padded_tokens.append(np.array(pad_stories))
-        return padded_tokens
+        self._char_set = data.char_set
 
-    # Jan 8 : randomly make a few words in the input as UNK
-    def _random_unk(self, stories, queries, answers, encoder_vocab):
+        if args.word_drop:
+            self._stories, self._story_tokens = self._all_db_to_unk(self._stories, self._story_tokens, data.db_vocab_id, args.word_drop_prob)
 
+    def _all_db_to_unk(self, stories, story_tokens, db_vocab_id, word_drop_prob):
+        '''
+            Perform Entity-Dropout on stories and story tokens
+        '''
         new_stories = []
-        new_queries = []
+        new_stories_tokens = []
+        replace_index = dict()
         
-        for story, query, answer in zip(stories, queries, answers):
-            coin_toss = random.randint(0,1)
-            if coin_toss == 0:
-                sampled_words = []
-            else:
-                sampled_words = list(encoder_vocab)
-            for element in sampled_words:
-                story[story == element] = UNK_INDEX
-                query[query == element] = UNK_INDEX
-            new_stories.append(story)
-            new_queries.append(query)
-
-        return new_stories, new_queries
-    
-    def _all_db_to_unk(self, stories, queries, db_vocab_id, db_words_in_encoder_vocab,word_drop_prob):
-
-        new_stories = []
-        new_queries = []
-        
-        db_words = list(db_words_in_encoder_vocab.keys())
-        
-        for story, query in zip(stories, queries):
+        for k, story in enumerate(stories):
             new_story = story.copy()
             for i in range(new_story.shape[0]):
                 if db_vocab_id not in new_story[i]:
                     for j in range(new_story.shape[1]):
-                        if new_story[i][j] in db_words:
+                        if new_story[i][j] in self._entity_set:
                             sample = random.uniform(0,1)
                             if sample < word_drop_prob:
                                 new_story[i][j] = UNK_INDEX
+                                if k in replace_index:
+                                    replace_index[k].append((i,j))
+                                else:
+                                    replace_index[k] = [(i,j)]
             new_stories.append(new_story)
-            new_queries.append(query)
-
-        return new_stories, new_queries
+        UNK_token = self._tokenize('UNK', 1) 
+        UNK_token += [0]*(self._token_size - len(UNK_token))
+        for i, story_token in enumerate(story_tokens):
+            if i in replace_index:
+                new_story_token = story_token.copy()
+                for x,y in replace_index[i]:
+                    new_stories_tokens[x][y] = UNK_token
+                new_stories_tokens.append(new_story_token) 
+            else:
+                new_stories_tokens.append(story_token) 
+        return new_stories, new_stories_tokens
+    
+    
