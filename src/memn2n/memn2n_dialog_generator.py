@@ -395,9 +395,8 @@ class MemN2NGeneratorDialog(object):
 			if sh != shape:
 				print(name, i, shape, sh)
 
-	def print_feed(self, feed_dict):
+	def print_feed(self, feed_dict, train):
 		self.check_shape('Stories: ', feed_dict[self._stories])
-		self.check_shape('Story Positions: ', feed_dict[self._story_positions])
 		self.check_shape('Story Sizes: ', feed_dict[self._sentence_sizes])
 		self.check_shape('Queries: ', feed_dict[self._queries])
 		self.check_shape('Queries Sizes: ', feed_dict[self._query_sizes])
@@ -409,6 +408,10 @@ class MemN2NGeneratorDialog(object):
 			self.check_shape('_query_tokens: ', feed_dict[self._query_tokens])
 			self.check_shape('_sentence_word_sizes: ', feed_dict[self._sentence_word_sizes])
 			self.check_shape('_query_word_sizes: ', feed_dict[self._query_word_sizes])
+		if train:
+			self.check_shape('_answers: ', feed_dict[self._answers])
+			self.check_shape('_answers_emb_lookup: ', feed_dict[self._answers_emb_lookup] )
+			self.check_shape('_answer_sizes: ', feed_dict[self._answer_sizes])
 
 	def _make_feed_dict(self, batch, train=True):
 		"""Make a feed dictionary mapping parts of the batch to the appropriate placeholders.
@@ -418,26 +421,27 @@ class MemN2NGeneratorDialog(object):
 		  just_enc: Boolean. If True, only feed the parts needed for the encoder.
 		"""
 		feed_dict = {}
-		feed_dict[self._stories] = batch.stories
-		feed_dict[self._queries] = batch.queries
-		feed_dict[self._sentence_sizes] = batch.story_sizes
-		feed_dict[self._query_sizes] = batch.query_sizes
-		feed_dict[self._oov_ids] = batch.oov_ids
-		feed_dict[self._oov_sizes] = batch.oov_sizes
-		feed_dict[self._intersection_mask] = batch.intersection_set
+		feed_dict[self._stories] = np.array(batch.stories)
+		feed_dict[self._queries] = np.array(batch.queries)
+		feed_dict[self._sentence_sizes] = np.array(batch.story_sizes)
+		feed_dict[self._query_sizes] = np.array(batch.query_sizes)
+		feed_dict[self._oov_ids] = np.array(batch.oov_ids)
+		feed_dict[self._oov_sizes] = np.array(batch.oov_sizes)
+		feed_dict[self._intersection_mask] = np.array(batch.intersection_set)
 		if self._char_emb:
-			feed_dict[self._sentence_tokens] = batch.story_tokens
-			feed_dict[self._query_tokens] = batch.query_tokens
-			feed_dict[self._sentence_word_sizes] = batch.story_word_sizes
-			feed_dict[self._query_word_sizes] = batch.query_word_sizes
-			feed_dict[self._token_size] = batch.token_size
+			feed_dict[self._sentence_tokens] = np.array(batch.story_tokens)
+			feed_dict[self._query_tokens] = np.array(batch.query_tokens)
+			feed_dict[self._sentence_word_sizes] = np.array(batch.story_word_sizes)
+			feed_dict[self._query_word_sizes] = np.array(batch.query_word_sizes)
+			feed_dict[self._token_size] = np.array(batch.token_size)
 		if train:
-			feed_dict[self._answers] = batch.answers
-			feed_dict[self._answers_emb_lookup] = batch.answers_emb_lookup
-			feed_dict[self._answer_sizes] = batch.answer_sizes
+			feed_dict[self._answers] = np.array(batch.answers)
+			feed_dict[self._answers_emb_lookup] = np.array(batch.answers_emb_lookup)
+			feed_dict[self._answer_sizes] = np.array(batch.answer_sizes)
 			feed_dict[self._keep_prob] = 0.5 
 		else:
 			feed_dict[self._keep_prob] = 1.0 
+		# self.print_feed(feed_dict, train)
 		return feed_dict
 
 	def batch_fit(self, batch):

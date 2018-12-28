@@ -144,7 +144,7 @@ def merge(ordered, gold_out=True):
 
 def evaluate(args, glob, predictions, data):
 	preds = predictions
-	golds = data.answers
+	golds = data.answers.copy()
 	word_map = glob['decode_idx']
 	index_map = glob['idx_decode']
 	entities = data.entities

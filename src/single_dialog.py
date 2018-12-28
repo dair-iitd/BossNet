@@ -218,7 +218,8 @@ class chatBot(object):
 		total_seq = 0.0		# Sequence Loss
 		total_pgen = 0.0	# Pgen Loss
 
-		for i in tqdm(range(0, len(batches))):
+		for i in tqdm(range(0, 1)):
+		# for i in tqdm(range(0, len(batches))):
 			(start, end) = batches[i]
 			batch_entry = Batch(data, start, end, args)
 			cost_t, logits, seq_loss, pgen_loss, pgens, mask = self.model.batch_fit(batch_entry)
