@@ -142,11 +142,11 @@ def merge(ordered, gold_out=True):
 			dids.append(i)
 	return preds, golds, dids
 
-def evaluate(args, predictions, data):
+def evaluate(args, glob, predictions, data):
 	preds = predictions
 	golds = data.answers
-	word_map = args.decode_idx
-	index_map = args.idx_decode
+	word_map = glob['decode_idx']
+	index_map = glob['idx_decode']
 	entities = data.entities
 	dialog_ids = data.dialog_ids
 	oov_words = data.oov_words

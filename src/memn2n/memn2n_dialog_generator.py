@@ -54,29 +54,29 @@ def add_gradient_noise(t, stddev=1e-3, name=None):
 class MemN2NGeneratorDialog(object):
 	"""End-To-End Memory Network with a generative decoder."""
 
-	def __init__(self, args):
+	def __init__(self, args, glob):
 
 		# Initialize Model Variables
 		self._batch_size = args.batch_size
 		self._beam_width = args.beam_width
-		self._candidate_sentence_size = args.candidate_sentence_size
+		self._candidate_sentence_size = glob['candidate_sentence_size']
 		self._char_emb = args.char_emb
-		self._decode_idx = args.decode_idx
+		self._decode_idx = glob['decode_idx']
 		self._embedding_size = args.embedding_size
 		self._hierarchy = args.hierarchy
 		self._hops = args.hops
 		self._init = tf.random_normal_initializer(stddev=0.1)
 		self._max_grad_norm = args.max_grad_norm
 		self._name = 'MemN2N'
-		self._opt = args.optimizer
+		self._opt = glob['optimizer']
 		self._p_gen_loss = args.p_gen_loss
 		self._p_gen_loss_weight = args.p_gen_loss_weight
 		self._rnn = args.rnn
-		self._sentence_size = args.sentence_size
+		self._sentence_size = glob['sentence_size']
 		self._soft_weight = args.soft_weight
 		self._token_emb_size = args.char_embedding_size
 		self._task_id = args.task_id
-		self._vocab_size = args.vocab_size
+		self._vocab_size = glob['vocab_size']
 
 		# Add unk and eos
 		self.UNK = self._decode_idx["UNK"]
@@ -120,7 +120,7 @@ class MemN2NGeneratorDialog(object):
 		self.graph_output = self.loss_op
 
 		init_op = tf.global_variables_initializer()
-		self._sess = args.session
+		self._sess = glob['session']
 		self._sess.run(init_op)
 
 	def _build_inputs(self):

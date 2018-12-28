@@ -11,28 +11,28 @@ EOS_INDEX = 3
 
 class Data(object):
 
-    def __init__(self, data, args):
-        self._db_vocab_id = args.word_idx.get('$db', -1)
-        self._decode_vocab_size = len(args.decode_idx)
+    def __init__(self, data, args, glob):
+        self._db_vocab_id = glob['word_idx'].get('$db', -1)
+        self._decode_vocab_size = len(glob['decode_idx'])
         self._char_set = [] # For tokenize function
 
         ## Sort Dialogs based on turn_id
         self._extract_data_items(data)
         
         ## Process Stories
-        self._vectorize_stories(self._stories_ext, args)
+        self._vectorize_stories(self._stories_ext, args, glob)
 
         ## Process Queries
-        self._vectorize_queries(self._queries_ext, args)
+        self._vectorize_queries(self._queries_ext, glob)
         
         ## Process Answers
-        self._vectorize_answers(self._answers_ext, args)
+        self._vectorize_answers(self._answers_ext, glob)
         
         ## Create DB word mappings to Vocab
         self._entity_set = self._populate_entity_set(self._stories_ext, self._answers_ext)
         
         ## Get indicies where copying must take place
-        self._intersection_set = self._intersection_set_mask(self._answers, self._entity_set, args)
+        self._intersection_set = self._intersection_set_mask(self._answers, self._entity_set, glob)
         
         ## Get entities at response level
         self._entities = self._get_entity_indecies(self._read_answers, self._entity_set)
@@ -173,7 +173,7 @@ class Data(object):
             self._char_set.append(token)
             return len(self._char_set)
 
-    def _tokenize(self, word, size, max_length=None):
+    def _tokenize(self, word, size=1):
         '''
             Breaks each sentence into a list of tokens of given size
         '''
@@ -183,11 +183,9 @@ class Data(object):
         while end <= len(word):
             tokens.append(self._index(word[start:end]))
             start += 1; end += 1;
-        if max_length and len(tokens) > max_length:  
-            return tokens[:max_length]
         else: return tokens
 
-    def _vectorize_stories(self, stories, args):     
+    def _vectorize_stories(self, stories, args, glob):     
         '''
             Maps each story into word and character tokens and assigns them ids
         '''   
@@ -215,24 +213,24 @@ class Data(object):
 
             self._responses[i] = []
             for sentence in story:
-                pad = max(0, args.sentence_size - len(sentence))
-                story_sentences.append([args.word_idx[w] if w in args.word_idx else UNK_INDEX for w in sentence] + [0] * pad)
+                pad = max(0, glob['sentence_size'] - len(sentence))
+                story_sentences.append([glob['word_idx'][w] if w in glob['word_idx'] else UNK_INDEX for w in sentence] + [0] * pad)
                 sentence_sizes.append(len(sentence))
-                word_tokens = [self._tokenize(w, args.char_emb_length) for w in sentence] + [[]] * pad
+                word_tokens = [self._tokenize(w) for w in sentence] + [[]] * pad
                 word_sizes.append([len(w) for w in word_tokens])
                 tokens.append(word_tokens)
                 story_string.append([str(x) for x in sentence] + [''] * pad)
 
                 oov_sentence_ids = []
                 for w in sentence:
-                    if w not in args.decode_idx:
+                    if w not in glob['decode_idx']:
                         if w not in oov_words:
                             oov_sentence_ids.append(self._decode_vocab_size + len(oov_words))
                             oov_words.append(w)
                         else:
                             oov_sentence_ids.append(self._decode_vocab_size + oov_words.index(w))
                     else:
-                        oov_sentence_ids.append(args.decode_idx[w])
+                        oov_sentence_ids.append(glob['decode_idx'][w])
                 oov_sentence_ids = oov_sentence_ids + [PAD_INDEX] * pad
                 oov_ids.append(oov_sentence_ids)
 
@@ -247,12 +245,12 @@ class Data(object):
             else: # pad to memory_size
                 mem_pad = max(0, memory_size - len(story_sentences))
                 for _ in range(mem_pad):
-                    story_sentences.append([0] * args.sentence_size)
+                    story_sentences.append([0] * glob['sentence_size'])
                     sentence_sizes.append(0)
-                    word_sizes.append([0] * args.sentence_size)
-                    tokens.append([[]] * args.sentence_size)
-                    story_string.append([''] * args.sentence_size)
-                    oov_ids.append([0] * args.sentence_size)
+                    word_sizes.append([0] * glob['sentence_size'])
+                    tokens.append([[]] * glob['sentence_size'])
+                    story_string.append([''] * glob['sentence_size'])
+                    oov_ids.append([0] * glob['sentence_size'])
 
             self._stories.append(np.array(story_sentences))
             self._story_lengths.append(len(story))
@@ -280,7 +278,7 @@ class Data(object):
             Padded_Word_Tokens.append(np.array(pad_stories))
         self._story_tokens = Padded_Word_Tokens
 
-    def _vectorize_queries(self, queries, args):
+    def _vectorize_queries(self, queries, glob):
         '''
             Maps each query into word and character tokens and assigns them ids
         '''  
@@ -291,9 +289,9 @@ class Data(object):
         self._read_queries = []
 
         for i, query in enumerate(queries):
-            pad = max(0, args.sentence_size - len(query))
-            query_sentence = [args.word_idx[w] if w in args.word_idx else UNK_INDEX for w in query] + [0] * pad
-            tokens = [self._tokenize(w, args.char_emb_length) for w in query] + [[]] * pad
+            pad = max(0, glob['sentence_size'] - len(query))
+            query_sentence = [glob['word_idx'][w] if w in glob['word_idx'] else UNK_INDEX for w in query] + [0] * pad
+            tokens = [self._tokenize(w) for w in query] + [[]] * pad
             token_size = [len(w) for w in tokens]
 
             self._queries.append(np.array(query_sentence))
@@ -307,7 +305,7 @@ class Data(object):
             Padded_Word_Tokens.append(np.array([token + [0]*(self._token_size - len(token)) for token in token_list]))
         self._query_tokens = Padded_Word_Tokens
 
-    def _vectorize_answers(self, answers, args):
+    def _vectorize_answers(self, answers, glob):
         '''
             Maps each story into word tokens and assigns them ids
         '''   
@@ -317,13 +315,13 @@ class Data(object):
         self._answers_emb_lookup = []
 
         for i, answer in enumerate(answers):
-            pad = max(0, args.candidate_sentence_size - len(answer) - 1)
+            pad = max(0, glob['candidate_sentence_size'] - len(answer) - 1)
             answer_sentence = []
             a_emb_lookup = []
             for w in answer:
-                if w in args.decode_idx:
-                    answer_sentence.append(args.decode_idx[w])
-                    a_emb_lookup.append(args.decode_idx[w])
+                if w in glob['decode_idx']:
+                    answer_sentence.append(glob['decode_idx'][w])
+                    a_emb_lookup.append(glob['decode_idx'][w])
                 elif w in self._oov_words[i]:
                     answer_sentence.append(self._decode_vocab_size + self._oov_words[i].index(w))
                     a_emb_lookup.append(UNK_INDEX)
@@ -356,14 +354,14 @@ class Data(object):
                         entity_set.add(w)
         return entity_set
 
-    def _intersection_set_mask(self, answers, entity_set, args):
+    def _intersection_set_mask(self, answers, entity_set, glob):
         '''
             Create a mask which tracks the postions to copy a DB word
         '''
         mask = []
         for i, answer in enumerate(answers):
             vocab = set(answer).intersection(entity_set)
-            dialog_mask = [0.0 if (x in vocab or x not in args.idx_decode) else 1.0 for x in answer]
+            dialog_mask = [0.0 if (x in vocab or x not in glob['idx_decode']) else 1.0 for x in answer]
             mask.append(np.array(dialog_mask))
         return mask
 
@@ -449,7 +447,7 @@ class Batch(Data):
                                 else:
                                     replace_index[k] = [(i,j)]
             new_stories.append(new_story)
-        UNK_token = self._tokenize('UNK', 1) 
+        UNK_token = self._tokenize('UNK') 
         UNK_token += [0]*(self._token_size - len(UNK_token))
         for i, story_token in enumerate(story_tokens):
             if i in replace_index:

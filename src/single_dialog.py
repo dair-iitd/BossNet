@@ -20,6 +20,7 @@ from sklearn import metrics
 from tqdm import tqdm
 
 args = get_params()
+glob = {}
 
 class chatBot(object):
 
@@ -33,11 +34,11 @@ class chatBot(object):
 		1) Decoder Vocab [decode_idx, idx_decode] 	# Used to Encode Response by Response-Decoder
 		2) Context Vocab [word_idx, idx_word] 		# Used to Encode Context Input by Encoder
 		'''
-		
+
 		# 1) Load Response-Decoder Vocabulary
-		args.decode_idx, args.idx_decode, args.candidate_sentence_size = get_decoder_vocab(args.data_dir, args.task_id)
-		print("Decoder Vocab Size : {}".format(len(args.decode_idx)))
-		print("candidate_sentence_size : {}".format(args.candidate_sentence_size)); sys.stdout.flush()
+		glob['decode_idx'], glob['idx_decode'], glob['candidate_sentence_size'] = get_decoder_vocab(args.data_dir, args.task_id)
+		print("Decoder Vocab Size : {}".format(len(glob['decode_idx'])))
+		print("candidate_sentence_size : {}".format(glob['candidate_sentence_size'])); sys.stdout.flush()
 		# Retreive Task Data
 		self.trainData, self.testData, self.valData, self.testOOVData = load_dialog_task(args.data_dir, args.task_id)
 		
@@ -45,9 +46,9 @@ class chatBot(object):
 		self.build_vocab(self.trainData)
 
 		# Define MemN2N + Generator Model
-		args.optimizer = tf.train.AdamOptimizer(learning_rate=args.learning_rate, epsilon=args.epsilon)
-		args.session = tf.Session()
-		self.model = MemN2NGeneratorDialog(args)
+		glob['optimizer'] = tf.train.AdamOptimizer(learning_rate=args.learning_rate, epsilon=args.epsilon)
+		glob['session'] = tf.Session()
+		self.model = MemN2NGeneratorDialog(args, glob)
 		self.saver = tf.train.Saver(max_to_keep=4)
 
 	def build_vocab(self, data):
@@ -56,16 +57,16 @@ class chatBot(object):
 		'''
 		vocab = reduce(lambda x, y: x | y, (set(list(chain.from_iterable(s)) + q) for s, q, a, _, _ in data))
 		vocab = sorted(vocab)
-		args.word_idx = dict((c, i + 2) for i, c in enumerate(vocab))
-		args.word_idx['']=0
-		args.word_idx['UNK']=1
-		args.vocab_size = len(args.word_idx) + 1  # +1 for nil word
-		args.idx_word = {v: k for k, v in args.word_idx.items()}
-		print("Context Vocab Size : {}".format(args.vocab_size)); sys.stdout.flush()
+		glob['word_idx'] = dict((c, i + 2) for i, c in enumerate(vocab))
+		glob['word_idx']['']=0
+		glob['word_idx']['UNK']=1
+		glob['vocab_size'] = len(glob['word_idx']) + 1  # +1 for nil word
+		glob['idx_word'] = {v: k for k, v in glob['word_idx'].items()}
+		print("Context Vocab Size : {}".format(glob['vocab_size'])); sys.stdout.flush()
 
 		sentence_size = max(map(len, chain.from_iterable(s for s, _, _, _, _ in data)))
 		query_size = max(map(len, (q for _, q, _, _, _ in data)))
-		args.sentence_size = max(query_size, sentence_size)
+		glob['sentence_size'] = max(query_size, sentence_size)
 
 	def train(self):
 		'''
@@ -73,20 +74,20 @@ class chatBot(object):
 		'''
 
 		# Get Data in usable form
-		Data_train = Data(self.trainData, args)
+		Data_train = Data(self.trainData, args, glob)
 		n_train = len(Data_train.stories)
 		print("Training Size", n_train)
 
-		Data_val = Data(self.valData, args)
+		Data_val = Data(self.valData, args, glob)
 		n_val = len(Data_val.stories)
 		print("Validation Size", n_val)
 
-		Data_test = Data(self.testData, args)
+		Data_test = Data(self.testData, args, glob)
 		n_test = len(Data_test.stories)
 		print("Test Size", n_test)
 
 		if args.task_id < 6:
-			Data_test_OOV = Data(self.testOOVData, args)
+			Data_test_OOV = Data(self.testOOVData, args, glob)
 			n_oov = len(Data_test_OOV.stories)
 			print("Test OOV Size", n_oov)
 		sys.stdout.flush()
@@ -102,7 +103,7 @@ class chatBot(object):
 		if args.save:
 			ckpt = tf.train.get_checkpoint_state(self.model_dir)
 			if ckpt and ckpt.model_checkpoint_path:
-				self.saver.restore(args.session, ckpt.model_checkpoint_path)
+				self.saver.restore(glob['session'], ckpt.model_checkpoint_path)
 			else:
 				print("...no checkpoint found...")
 			print('*Predict Validation*'); sys.stdout.flush()
@@ -180,16 +181,16 @@ class chatBot(object):
 		# Look for previously saved checkpoint
 		ckpt = tf.train.get_checkpoint_state(self.model_dir)
 		if ckpt and ckpt.model_checkpoint_path:
-			self.saver.restore(args.session, ckpt.model_checkpoint_path)
+			self.saver.restore(glob['session'], ckpt.model_checkpoint_path)
 		else:
 			print("...no checkpoint found...")
 
 		if args.OOV:
-			Data_test = Data(self.testOOVData, args)
+			Data_test = Data(self.testOOVData, args, glob)
 			n_test = len(Data_test_OOV.stories)
 			print("Test OOV Size", n_test)
 		else:
-			Data_test = Data(self.testData, args)
+			Data_test = Data(self.testData, args, glob)
 			n_test = len(Data_test.stories)
 			print("Test Size", n_test)
 		sys.stdout.flush()
@@ -242,7 +243,7 @@ class chatBot(object):
 			predictions += pad_to_answer_size(list(new_pred), args.candidate_sentence_size)
 
 		# Evaluate metrics
-		return evaluate(args, predictions, data)
+		return evaluate(args, glob, predictions, data)
 
 	def close_session(self):
 		args.session.close()
