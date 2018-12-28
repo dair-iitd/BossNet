@@ -240,7 +240,7 @@ class chatBot(object):
 			old_pred, new_pred, hier, line, word, p_gens = self.model.predict(data_batch)
 
 			# Store prediction outputs
-			predictions += pad_to_answer_size(list(new_pred), args.candidate_sentence_size)
+			predictions += pad_to_answer_size(list(new_pred), glob['candidate_sentence_size'])
 
 		# Evaluate metrics
 		return evaluate(args, glob, predictions, data)
