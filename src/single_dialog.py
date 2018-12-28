@@ -72,7 +72,7 @@ class chatBot(object):
 		'''
 			Train the model
 		'''
-
+		print("------------------------")
 		# Get Data in usable form
 		Data_train = Data(self.trainData, args, glob)
 		n_train = len(Data_train.stories)
@@ -209,10 +209,11 @@ class chatBot(object):
 		print("------------------------")
 		sys.stdout.flush()
 
-	def batch_train(self, data, batches):
+	def batch_train(self, data, train_batches):
 		'''
 			Train Model for a Batch of Input Data
 		'''
+		batches = train_batches.copy()
 		np.random.shuffle(batches)
 		total_cost = 0.0	# Total Loss
 		total_seq = 0.0		# Sequence Loss
