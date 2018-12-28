@@ -147,7 +147,7 @@ class chatBot(object):
 				val_to_compare = val_accuracies['comp']
 				if val_to_compare >= best_validation_accuracy:
 					best_validation_accuracy = val_to_compare
-					self.saver.save(args.session, self.model_dir + 'model.ckpt', global_step=epoch)
+					self.saver.save(glob['session'], self.model_dir + 'model.ckpt', global_step=epoch)
 					print('MODEL SAVED')
 				
 				# Evaluate on Test datasets
@@ -246,7 +246,7 @@ class chatBot(object):
 		return evaluate(args, glob, predictions, data)
 
 	def close_session(self):
-		args.session.close()
+		glob['session'].close()
 
 ''' Main Function '''
 if __name__ == '__main__': 
