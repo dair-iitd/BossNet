@@ -221,7 +221,7 @@ class chatBot(object):
 
 		pbar = tqdm(enumerate(batches),total=len(batches))
 		for i, (start, end) in pbar:
-			batch_entry = Batch(data, start, end, args)
+			batch_entry = Batch(data, start, end, args, train=True)
 			cost_t, logits, seq_loss, pgen_loss, pgens, mask = self.model.batch_fit(batch_entry)
 			total_seq += seq_loss
 			total_pgen += pgen_loss

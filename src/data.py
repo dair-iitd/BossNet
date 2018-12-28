@@ -281,7 +281,7 @@ class Data(object):
 
 class Batch(Data):
 
-    def __init__(self, data, start, end, args):
+    def __init__(self, data, start, end, args, train=False):
 
         self._stories = data.stories[start:end]
 
@@ -317,7 +317,7 @@ class Batch(Data):
 
         self._entity_set = data.entity_set
 
-        if args.word_drop:
+        if args.word_drop and train:
             self._stories = self._all_db_to_unk(self._stories, data.db_vocab_id, args.word_drop_prob)
 
     def _all_db_to_unk(self, stories, db_vocab_id, word_drop_prob):
