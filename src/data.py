@@ -121,10 +121,6 @@ class Data(object):
     @property
     def entities(self):
         return self._entities
-
-    @property
-    def responses(self):
-        return self._responses
     
     ## PGen Mask
     @property
@@ -149,7 +145,6 @@ class Data(object):
         self._oov_ids = []              # The index of words for copy in Response-Decoder
         self._oov_sizes = []            # The size of OOV words set in Response-Decoder
         self._oov_words = []            # The OOV words in the Stories
-        self._responses = {}
 
         for i, story in enumerate(stories):
             if i % args.batch_size == 0:
@@ -160,7 +155,6 @@ class Data(object):
             oov_ids = []            # The ids of words in OOV index for copy
             oov_words = []          # The OOV words in a Single Story
 
-            self._responses[i] = []
             for sentence in story:
                 pad = max(0, glob['sentence_size'] - len(sentence))
                 story_sentences.append([glob['word_idx'][w] if w in glob['word_idx'] else UNK_INDEX for w in sentence] + [0] * pad)

@@ -199,7 +199,7 @@ class chatBot(object):
 
 		print('*Predict Test*'); sys.stdout.flush()
 		test_accuracies = self.batch_predict(Data_test, batches_test)
-		print('\n-----------------------')
+		print('-----------------------')
 		print('SUMMARY')
 		if args.bleu_score:
 			print('{0:30} : {1:6f}'.format("Test BLEU", test_accuracies['bleu']))

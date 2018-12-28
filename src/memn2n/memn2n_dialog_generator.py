@@ -90,7 +90,7 @@ class MemN2NGeneratorDialog(object):
 		self.root_dir = "%s_%s_%s_%s/" % ('task',
 										  str(self._task_id), 'summary_output', timestamp)
 
-		encoder_states, line_memory, word_memory, attn_arr = self._encoder(self._stories, self._story_positions, self._queries)
+		encoder_states, line_memory, word_memory, attn_arr = self._encoder(self._stories, self._queries)
 		
 		# train_op 
 		loss_op, logits, seq_loss_op, pgen_loss_op, p_gens, intersect_mask = self._decoder_train(encoder_states, line_memory, word_memory)
@@ -124,17 +124,23 @@ class MemN2NGeneratorDialog(object):
 		'''
 			Define Input Variables to be given to the model
 		'''
+		## Encode Ids ##
 		self._stories = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="stories")
-		self._story_positions = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="storie_positions")
 		self._queries = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries")
 		self._answers = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers")
-		self._intersection_mask = tf.placeholder(tf.float32, [None, self._candidate_sentence_size], name="intersection_mask")
-		self._answers_emb_lookup = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers_emb")
+		
+		## Sizes ##
 		self._sentence_sizes = tf.placeholder(tf.int32, [None, None], name="sentence_sizes")
 		self._query_sizes = tf.placeholder(tf.int32, [None, 1], name="query_sizes")
 		self._answer_sizes = tf.placeholder(tf.int32, [None, 1], name="answer_sizes")
+
+		## OOV Helpers ##
 		self._oov_ids = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="oov_ids")
 		self._oov_sizes = tf.placeholder(tf.int32, [None], name="oov_sizes")
+
+		## Train Helpers ###
+		self._intersection_mask = tf.placeholder(tf.float32, [None, self._candidate_sentence_size], name="intersection_mask")
+		self._answers_emb_lookup = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers_emb")
 		self._keep_prob = tf.placeholder(tf.float32)
 
 	def _build_vars(self):
@@ -175,7 +181,7 @@ class MemN2NGeneratorDialog(object):
 			return new_c # Return new cell state
 
 
-	def _encoder(self, stories, story_positions, queries):
+	def _encoder(self, stories, queries):
 		with tf.variable_scope(self._name):
 
 			### Set Variables ###

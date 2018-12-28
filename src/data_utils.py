@@ -162,9 +162,7 @@ def create_batches(data, batch_size):
 
 def pad_to_answer_size(pred, size):
     for i, list in enumerate(pred):
-        if len(list) >= size:
-            pred[i] = list[:size]
-        else:
-            arr = np.array([PAD_INDEX] * (size - len(list)))
-            pred[i] = np.append(list, arr)
+        sz = len(list)
+        if sz >= size:  pred[i] = list[:size]
+        else:           pred[i] = np.append(list, np.array([PAD_INDEX] * (size - sz)))
     return pred
