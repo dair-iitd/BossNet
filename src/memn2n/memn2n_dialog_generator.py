@@ -58,9 +58,7 @@ class MemN2NGeneratorDialog(object):
 
 		# Initialize Model Variables
 		self._batch_size = args.batch_size
-		self._beam_width = args.beam_width
 		self._candidate_sentence_size = glob['candidate_sentence_size']
-		self._char_emb = args.char_emb
 		self._decode_idx = glob['decode_idx']
 		self._embedding_size = args.embedding_size
 		self._hierarchy = args.hierarchy
@@ -74,7 +72,6 @@ class MemN2NGeneratorDialog(object):
 		self._rnn = args.rnn
 		self._sentence_size = glob['sentence_size']
 		self._soft_weight = args.soft_weight
-		self._token_emb_size = args.char_embedding_size
 		self._task_id = args.task_id
 		self._vocab_size = glob['vocab_size']
 
@@ -134,16 +131,11 @@ class MemN2NGeneratorDialog(object):
 		self._intersection_mask = tf.placeholder(tf.float32, [None, self._candidate_sentence_size], name="intersection_mask")
 		self._answers_emb_lookup = tf.placeholder(tf.int32, [None, self._candidate_sentence_size], name="answers_emb")
 		self._sentence_sizes = tf.placeholder(tf.int32, [None, None], name="sentence_sizes")
-		self._sentence_tokens = tf.placeholder(tf.int32, [None, None, self._sentence_size, None], name="story_tokens")
-		self._sentence_word_sizes = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="sentence_word_sizes")
 		self._query_sizes = tf.placeholder(tf.int32, [None, 1], name="query_sizes")
-		self._query_tokens = tf.placeholder(tf.int32, [None, self._sentence_size, None], name="query_tokens")
-		self._query_word_sizes = tf.placeholder(tf.int32, [None, self._sentence_size], name="queries_word_sizes")
 		self._answer_sizes = tf.placeholder(tf.int32, [None, 1], name="answer_sizes")
 		self._oov_ids = tf.placeholder(tf.int32, [None, None, self._sentence_size], name="oov_ids")
 		self._oov_sizes = tf.placeholder(tf.int32, [None], name="oov_sizes")
 		self._keep_prob = tf.placeholder(tf.float32)
-		self._token_size = tf.placeholder(tf.int32)
 
 	def _build_vars(self):
 		'''
@@ -157,8 +149,6 @@ class MemN2NGeneratorDialog(object):
 			C = tf.concat([nil_word_slot, self._init([self._decoder_vocab_size, self._embedding_size])], 0)
 			self.C = tf.Variable(C, name="C")
 
-			self.Z = tf.Variable(self._init([self._token_emb_size, self._embedding_size]), name="Z")
-
 			self.H = tf.Variable(self._init([self._embedding_size, self._embedding_size]), name="H")
 
 			with tf.variable_scope('decoder'):
@@ -168,11 +158,6 @@ class MemN2NGeneratorDialog(object):
 			with tf.variable_scope("encoder"):
 				self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
 				self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
-
-			if self._char_emb:
-				with tf.variable_scope("char_emb"):
-					self.char_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
-					self.char_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
 
 			with tf.variable_scope('reduce_bow'):
 				# Define weights and biases to reduce the cell and reduce the state
@@ -202,20 +187,8 @@ class MemN2NGeneratorDialog(object):
 			# query_word_emb : batch_size x sentence_size x embedding_size
 			query_word_emb = tf.nn.embedding_lookup(self.A, queries)
 
-			if self._char_emb:
-				query_token_sizes = tf.reshape(self._query_word_sizes, [-1])
-				query_token_emb = tf.nn.embedding_lookup(self.Z, self._query_tokens)
-				query_token_emb =  tf.reshape(query_token_emb, tf.stack([-1, self._token_size, self._embedding_size]))
-				with tf.variable_scope("char_emb"):
-					(outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.char_fwd, self.char_bwd, query_token_emb, sequence_length=query_token_sizes, dtype=tf.float32)
-				(f_state, b_state) = output_states
-				query_char_emb = tf.concat(axis=1, values=[f_state, b_state])
-				query_char_emb = tf.reshape(query_char_emb, [self._batch_size, self._sentence_size, self._embedding_size])
-				# query_emb : batch_size x sentence_size x embedding_size*2
-				query_emb = tf.concat(axis=2, values=[query_char_emb, query_word_emb])
-			else:
-				# query_emb : batch_size x sentence_size x embedding_size
-				query_emb = query_word_emb
+			# query_emb : batch_size x sentence_size x embedding_size
+			query_emb = query_word_emb
 
 			if self._rnn:
 				query_sizes = tf.reshape(self._query_sizes, [-1])
@@ -226,9 +199,6 @@ class MemN2NGeneratorDialog(object):
 				# u_0 : batch_size x embedding_size
 				u_0 = tf.concat(axis=1, values=[f_state, b_state])
 			else:
-				if self._char_emb:
-					query_emb = self._reduce_to_bow(query_emb)
-					query_emb = tf.reshape(query_emb, [self._batch_size, self._sentence_size, self._embedding_size])
 				u_0 = tf.reduce_sum(query_emb, 1)
 			u = [u_0]
 			
@@ -236,21 +206,7 @@ class MemN2NGeneratorDialog(object):
 			# stories : batch_size x memory_size x sentence_size
 			# memory_word_emb : batch_size x memory_size x sentence_size x embedding_size
 			memory_word_emb = tf.nn.embedding_lookup(self.A, stories)
-			
-			if self._char_emb:
-				sentence_token_sizes = tf.reshape(self._sentence_word_sizes, [-1])
-				sentence_token_emb = tf.nn.embedding_lookup(self.Z, self._sentence_tokens)
-				sentence_token_emb =  tf.reshape(sentence_token_emb, tf.stack([-1, self._token_size, self._embedding_size]))
-				with tf.variable_scope("char_emb", reuse=True):
-					(outputs, output_states) = tf.nn.bidirectional_dynamic_rnn(self.char_fwd, self.char_bwd, sentence_token_emb, sequence_length=sentence_token_sizes, dtype=tf.float32)
-				(f_state, b_state) = output_states
-				memory_char_emb = tf.concat(axis=1, values=[f_state, b_state])
-				memory_char_emb = tf.reshape(memory_char_emb, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
-				memory_word_emb = tf.nn.dropout(memory_word_emb, self._keep_prob)
-				memory_emb = tf.concat(axis=3, values=[memory_char_emb, memory_word_emb])
-				memory_emb = tf.reshape(memory_emb, [-1, self._sentence_size, self._embedding_size*2])
-			else:
-				memory_emb = tf.reshape(memory_word_emb, [-1, self._sentence_size, self._embedding_size])
+			memory_emb = tf.reshape(memory_word_emb, [-1, self._sentence_size, self._embedding_size])
 
 			if self._rnn:
 				sentence_sizes = tf.reshape(self._sentence_sizes, [-1])
@@ -262,8 +218,6 @@ class MemN2NGeneratorDialog(object):
 				# line_memory : batch_size x memory_size x embedding_size
 				line_memory = tf.reshape(line_memory, [self._batch_size, self._memory_size, self._embedding_size])
 			else:
-				if self._char_emb:
-					memory_emb = self._reduce_to_bow(memory_emb)
 				memory_emb = tf.reshape(memory_emb, [self._batch_size, self._memory_size, self._sentence_size, self._embedding_size])
 				line_memory = tf.reduce_sum(memory_emb, 2)
 			
@@ -403,11 +357,6 @@ class MemN2NGeneratorDialog(object):
 		self.check_shape('oov ids: ', feed_dict[self._oov_ids])
 		self.check_shape('oov sizes: ', feed_dict[self._oov_sizes])
 		self.check_shape('intersection mask: ', feed_dict[self._intersection_mask])
-		if self._char_emb:
-			self.check_shape('_sentence_tokens: ', feed_dict[self._sentence_tokens])
-			self.check_shape('_query_tokens: ', feed_dict[self._query_tokens])
-			self.check_shape('_sentence_word_sizes: ', feed_dict[self._sentence_word_sizes])
-			self.check_shape('_query_word_sizes: ', feed_dict[self._query_word_sizes])
 		if train:
 			self.check_shape('_answers: ', feed_dict[self._answers])
 			self.check_shape('_answers_emb_lookup: ', feed_dict[self._answers_emb_lookup] )
@@ -428,12 +377,6 @@ class MemN2NGeneratorDialog(object):
 		feed_dict[self._oov_ids] = np.array(batch.oov_ids)
 		feed_dict[self._oov_sizes] = np.array(batch.oov_sizes)
 		feed_dict[self._intersection_mask] = np.array(batch.intersection_set)
-		if self._char_emb:
-			feed_dict[self._sentence_tokens] = np.array(batch.story_tokens)
-			feed_dict[self._query_tokens] = np.array(batch.query_tokens)
-			feed_dict[self._sentence_word_sizes] = np.array(batch.story_word_sizes)
-			feed_dict[self._query_word_sizes] = np.array(batch.query_word_sizes)
-			feed_dict[self._token_size] = np.array(batch.token_size)
 		if train:
 			feed_dict[self._answers] = np.array(batch.answers)
 			feed_dict[self._answers_emb_lookup] = np.array(batch.answers_emb_lookup)

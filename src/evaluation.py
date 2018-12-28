@@ -21,24 +21,19 @@ def process(preds, golds):
 	return preds, golds
 
 def get_surface_form(index_list, word_map, oov_words, context=False):
-    size = len(word_map)
-    if context:
-    	surfaces = []
-    	for story_line in index_list:
-    		surfaces.append([word_map[i] if i in word_map else oov_words[i - size] for i in story_line])
-    	return surfaces
-    else:
-    	lst = []
-    	for i in index_list:
-    		if i in word_map:
-    			lst.append(i)
-    		elif i - size < len(oov_words):
-    			lst.append(oov_words[i - size])
-    		else:
-    			print(i)
-    			print(size)
-    			print(oov_words)
-    	return lst
+	size = len(word_map)
+	maxs = size + len(oov_words)
+	if context:
+		surfaces = []
+		for story_line in index_list:
+			surfaces.append([word_map[i] if i in word_map else oov_words[i - size] for i in story_line])
+		return surfaces
+	else:
+		lst = []
+		for i in index_list:
+			if i in word_map:	lst.append(i)
+			elif i < maxs: 		lst.append(oov_words[i - size])
+		return lst
 
 def surface(index_list, word_map, oov_words, context=False):
 	surfaces = []
@@ -96,18 +91,23 @@ def f1(preds, golds, entities, word_map):
 
 	return "{:.2f}".format(100*f1_score(re, pr, average='micro'))
 
-def get_tokenized_response_from_padded_vector(vector, word_map):
-    return ' '.join([word_map[x] if x in word_map else 'UNK' for x in vector])
+def get_tokenized_response_from_padded_vector(vector, word_map, oov):
+	final = []
+	maxs = len(oov) + len(word_map)
+	for x in vector:
+		if x in word_map: 	final.append(word_map[x])
+		elif x < maxs: 		final.append(oov[x - len(word_map)])
+		else:				final.append('UNK')
+	return ' '.join(final)
 
-def BLEU(preds, golds, word_map):
-    tokenized_preds = []
-    tokenized_golds = []
+def BLEU(preds, golds, word_map, did, oovs):
+	tokenized_preds = []
+	tokenized_golds = []
 
-    for pred, gold in zip(preds, golds):
-        tokenized_preds.append(get_tokenized_response_from_padded_vector(pred, word_map))
-        tokenized_golds.append(get_tokenized_response_from_padded_vector(gold, word_map))
-
-    return "{:.2f}".format(moses_multi_bleu(tokenized_preds, tokenized_golds, True))
+	for i, (pred, gold) in enumerate(zip(preds, golds)):
+		tokenized_preds.append(get_tokenized_response_from_padded_vector(pred, word_map, oovs[did[i]]))
+		tokenized_golds.append(get_tokenized_response_from_padded_vector(gold, word_map, oovs[did[i]]))
+	return "{:.2f}".format(moses_multi_bleu(tokenized_preds, tokenized_golds, True))
 
 def tokenize(vals, dids):
 	tokens = []
@@ -145,8 +145,8 @@ def merge(ordered, gold_out=True):
 def evaluate(args, glob, predictions, data):
 	preds = predictions
 	golds = data.answers.copy()
-	word_map = glob['decode_idx']
-	index_map = glob['idx_decode']
+	word_map = glob['idx_decode'] 
+	index_map = glob['decode_idx']
 	entities = data.entities
 	dialog_ids = data.dialog_ids
 	oov_words = data.oov_words
@@ -175,8 +175,8 @@ def evaluate(args, glob, predictions, data):
 	preds, golds, dids = merge(ordered_orig, True)
 
 	output = {}
-	output['bleu'] = float(BLEU(preds, golds, word_map))
-	acc, dial = accuracy(preds, golds, dialog_ids)
+	output['bleu'] = float(BLEU(preds, golds, word_map, dids, ordered_oovs))
+	acc, dial = accuracy(preds, golds, dids)
 	output['acc'] = float(acc)
 	output['dialog'] = float(dial)
 	output['f1'] = float(f1(preds, golds, entities, word_map))

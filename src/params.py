@@ -14,29 +14,22 @@ flags.DEFINE_integer("batch_size", 64, "Batch size for training.")
 flags.DEFINE_integer("hops", 1, "Number of hops in the Memory Network.")
 flags.DEFINE_integer("embedding_size", 32, "Embedding size for embedding matrices.")
 flags.DEFINE_integer("soft_weight", 1, "Weight given to softmax function")
-flags.DEFINE_integer("beam_width", 1, "Width of Beam for BeamSearchDecoder")
 
 # Entity Word Drop
 flags.DEFINE_float("word_drop_prob", 0.0, "value to set, if word_drop is set to True")
 flags.DEFINE_boolean('word_drop', True, 'if True, drop db words in story')
-
-# Char Embedding
-flags.DEFINE_integer("char_emb_length", 1, "Number of letters treated as an input token for character embeddings")
-flags.DEFINE_integer("char_embedding_size", 256, "Embedding size for embedding matrices.")
 
 # PGen Loss
 flags.DEFINE_float("p_gen_loss_weight", 1, 'relative weight to p_gen loss, > 1 gives more weight to p_gen loss')
 flags.DEFINE_boolean("p_gen_loss", True, 'if True, uses additional p_gen loss during training')
 
 # Model Type
-flags.DEFINE_boolean("char_emb", False, 'if True, uses character embeddings')
 flags.DEFINE_boolean("hierarchy", True, "if True, uses hierarchy pointer attention")
 flags.DEFINE_boolean("rnn", True, "if True, uses bi-directional-rnn to encode, else Bag of Words")
 
 # Output and Evaluation Specifications
 flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every x epochs")
 flags.DEFINE_boolean("bleu_score", True, 'if True, uses BLUE word score to compute best model')
-flags.DEFINE_boolean("visualize", False, "if True, uses visualize_attention tool")
 flags.DEFINE_boolean("save", False, "if True, trains using previously saved model")
 
 # Task Type
@@ -63,29 +56,21 @@ def print_params(logging, args):
 	logging.info('[{}] : {}'.format('hops', args.hops))
 	logging.info('[{}] : {}'.format('embedding_size', args.embedding_size))
 	logging.info('[{}] : {}'.format('soft_weight', args.soft_weight))
-	logging.info('[{}] : {}'.format('beam_width', args.beam_width))
 	
 	print('\n# {}'.format('Word Drop'))
 	logging.info('[{}] : {}'.format('word_drop', args.word_drop))
-	logging.info('[{}] : {}'.format('word_drop_prob', args.word_drop_prob))
-
-	print('\n# {}'.format('Char Embedding'))
-	logging.info('[{}] : {}'.format('char_emb_length', args.char_emb_length))
-	logging.info('[{}] : {}'.format('char_embedding_size', args.char_embedding_size))
 
 	print('\n# {}'.format('PGen Loss'))
 	logging.info('[{}] : {}'.format('p_gen_loss', args.p_gen_loss))
 	logging.info('[{}] : {}'.format('p_gen_loss_weight', args.p_gen_loss_weight))
 
 	print('\n# {}'.format('Model Type'))
-	logging.info('[{}] : {}'.format('char_emb', args.char_emb))
 	logging.info('[{}] : {}'.format('hierarchy', args.hierarchy))
 	logging.info('[{}] : {}'.format('rnn', args.rnn))
 
 	print('\n# {}'.format('Evaluation Type'))
 	logging.info('[{}] : {}'.format('evaluation_interval', args.evaluation_interval))
 	logging.info('[{}] : {}'.format('bleu_score', args.bleu_score))
-	logging.info('[{}] : {}'.format('visualize', args.visualize))
 	logging.info('[{}] : {}'.format('save', args.save))
 	
 	print('\n# {}'.format('Task Type'))
