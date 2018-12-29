@@ -222,7 +222,7 @@ class chatBot(object):
 		pbar = tqdm(enumerate(batches),total=len(batches))
 		for i, (start, end) in pbar:
 			batch_entry = Batch(data, start, end, args, train=True)
-			cost_t, seq_loss, pgen_loss = self.model.batch_fit(batch_entry)
+			cost_t, logits, seq_loss, pgen_loss, pgens, mask = self.model.batch_fit(batch_entry)
 			total_seq += seq_loss
 			total_pgen += pgen_loss
 			total_cost += cost_t
@@ -239,10 +239,10 @@ class chatBot(object):
 		for i, (start, end) in pbar:
 			# Get predictions
 			data_batch = Batch(data, start, end, args)
-			preds = self.model.predict(data_batch)
+			old_pred, new_pred, hier, line, word, p_gens = self.model.predict(data_batch)
 
 			# Store prediction outputs
-			predictions += pad_to_answer_size(list(preds), glob['candidate_sentence_size'])
+			predictions += pad_to_answer_size(list(new_pred), glob['candidate_sentence_size'])
 
 		# Evaluate metrics
 		return evaluate(args, glob, predictions, data)

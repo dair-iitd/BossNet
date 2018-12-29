@@ -31,7 +31,6 @@ flags.DEFINE_boolean("rnn", True, "if True, uses bi-directional-rnn to encode, e
 flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every x epochs")
 flags.DEFINE_boolean("bleu_score", True, 'if True, uses BLUE word score to compute best model')
 flags.DEFINE_boolean("save", False, "if True, trains using previously saved model")
-flags.DEFINE_boolean("debug", False, 'if True, enables debug mode (Verbose Errors, but slower)')
 
 # Task Type
 flags.DEFINE_integer("task_id", 7, "bAbI task id, 1 <= id <= 8")
@@ -73,7 +72,6 @@ def print_params(logging, args):
 	logging.info('[{}] : {}'.format('evaluation_interval', args.evaluation_interval))
 	logging.info('[{}] : {}'.format('bleu_score', args.bleu_score))
 	logging.info('[{}] : {}'.format('save', args.save))
-	logging.info('[{}] : {}'.format('debug', args.debug))
 	
 	print('\n# {}'.format('Task Type'))
 	logging.info('[{}] : {}'.format('task_id', args.task_id))
