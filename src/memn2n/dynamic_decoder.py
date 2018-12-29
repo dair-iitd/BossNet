@@ -209,9 +209,9 @@ class BasicDecoder(Decoder):
           state=cell_state,
           sample_ids=sample_ids)
     outputs = BasicDecoderOutput(cell_outputs, sample_ids)
-    # save = attention
-    # outputs = self._calc_final_dist(outputs, attention, p_gens)
-    # attention = save
+    save = attention
+    outputs = self._calc_final_dist(outputs, attention, p_gens)
+    attention = save
     return (outputs, attention, p_gens, next_state, next_inputs, finished)
 
 
@@ -349,10 +349,6 @@ def dynamic_decode(decoder,
       nest.assert_same_structure(inputs, next_inputs)
       nest.assert_same_structure(attention, next_attention)
       nest.assert_same_structure(p_gens, next_p_gens)
-
-      save = next_attention
-      next_outputs = decoder._calc_final_dist(next_outputs, next_attention, next_p_gens)
-      next_attention = save
 
       # Zero out output values past finish
       if impute_finished:
