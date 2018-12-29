@@ -119,6 +119,53 @@ class BasicDecoder(Decoder):
         nest.map_structure(lambda _: dtype, self._rnn_output_size()),
         dtypes.int32)
 
+  def _calc_final_dist(self, next_outputs, attn_dists, p_gens, oov_ids_n, oov_sizes_n, decoder_vocab_size_n, batch_size):
+      """Calculate the final distribution, for the pointer-generator model
+
+      Args:
+        vocab_dists: The vocabulary distributions. List length max_dec_steps of (batch_size, vsize) arrays. The words are in the order they appear in the vocabulary file.
+        attn_dists: The attention distributions. List length max_dec_steps of (batch_size, attn_len) arrays
+
+      Returns:
+        final_dists: The final distributions. List length max_dec_steps of (batch_size, extended_vsize) arrays.
+      """
+      with tf.variable_scope('final_distribution'):
+        vocab_dists = tf.nn.softmax(next_outputs.rnn_output)
+        vocab_dists = tf.multiply(vocab_dists, p_gens)
+        one_minus_fn = lambda x: 1 - x
+        p_gens = tf.map_fn(one_minus_fn, p_gens)
+        attn_dists = tf.multiply(p_gens, attn_dists)
+
+        max_oov_len = tf.reduce_max(oov_sizes_n, reduction_indices=[0])
+
+        # Concatenate some zeros to each vocabulary dist, to hold the probabilities for in-article OOV words
+        extended_vsize =  decoder_vocab_size_n + max_oov_len # the maximum (over the batch) size of the extended vocabulary
+        extra_zeros = tf.zeros((batch_size, max_oov_len))
+        # vocab_dists_extended = [tf.concat(axis=1, values=[dist, extra_zeros]) for dist in vocab_dists] # list length max_dec_steps of shape (batch_size, extended_vsize)
+        vocab_dists_extended = array_ops.concat([vocab_dists, extra_zeros], axis=1)
+        # Project the values in the attention distributions onto the appropriate entries in the final distributions
+        # This means that if a_i = 0.1 and the ith encoder word is w, and w has index 500 in the vocabulary, then we add 0.1 onto the 500th entry of the final distribution
+        # This is done for each decoder timestep.
+        # This is fiddly; we use tf.scatter_nd to do the projection
+        batch_nums = tf.range(0, limit=batch_size) # shape (batch_size)
+        batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
+        attention_ids = tf.reshape(oov_ids_n, [batch_size, -1])
+        attn_len = tf.shape(attention_ids)[1] # number of states we attend over
+
+        batch_nums = tf.tile(batch_nums, [1, attn_len]) # shape (batch_size, attn_len)
+        indices = tf.stack( (batch_nums, attention_ids), axis=2) # shape (batch_size, enc_t, 2)
+        
+        shape = [batch_size, extended_vsize]
+        # attn_dists_projected = [tf.scatter_nd(indices, copy_dist, shape) for copy_dist in attn_dists] # list length max_dec_steps (batch_size, extended_vsize)
+        # attn_dists_projected = array_ops.scatter_nd(indices, attn_dists, shape)
+        attn_dists_projected = tf.scatter_nd(indices, attn_dists, shape)
+        # Add the vocab distributions and the copy distributions together to get the final distributions
+        # final_dists is a list length max_dec_steps; each entry is a tensor shape (batch_size, extended_vsize) giving the final distribution for that decoder timestep
+        # Note that for decoder timesteps and examples corresponding to a [PAD] token, this is junk - ignore.
+        # final_dists = [vocab_dist + copy_dist for (vocab_dist,copy_dist) in zip(vocab_dists_extended, attn_dists_projected)]
+        final_dists = math_ops.add(vocab_dists_extended, attn_dists_projected)
+        return BasicDecoderOutput(final_dists, next_outputs.sample_id)
+
   def initialize(self, name=None):
     """Initialize the decoder.
     Args:
@@ -128,7 +175,7 @@ class BasicDecoder(Decoder):
     """
     return self._helper.initialize() + (self._initial_state,)
 
-  def step(self, time, inputs, state, name=None):
+  def step(self, time, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size, name=None):
     """Perform a decoding step.
     Args:
       time: scalar `int32` tensor.
@@ -151,6 +198,9 @@ class BasicDecoder(Decoder):
           state=cell_state,
           sample_ids=sample_ids)
     outputs = BasicDecoderOutput(cell_outputs, sample_ids)
+    save = attention
+    outputs = self._calc_final_dist(outputs, attention, p_gens, oov_ids, oov_sizes, decoder_vocab_size, batch_size)
+    attention = save
     return (outputs, attention, p_gens, next_state, next_inputs, finished)
 
 
@@ -258,53 +308,6 @@ def dynamic_decode(decoder,
     initial_p_gens = nest.map_structure(_create_ta, tensor_shape.TensorShape(1),
                                               dtypes.float32)
 
-    def _calc_final_dist(next_outputs, attn_dists, p_gens):
-      """Calculate the final distribution, for the pointer-generator model
-
-      Args:
-        vocab_dists: The vocabulary distributions. List length max_dec_steps of (batch_size, vsize) arrays. The words are in the order they appear in the vocabulary file.
-        attn_dists: The attention distributions. List length max_dec_steps of (batch_size, attn_len) arrays
-
-      Returns:
-        final_dists: The final distributions. List length max_dec_steps of (batch_size, extended_vsize) arrays.
-      """
-      with tf.variable_scope('final_distribution'):
-        vocab_dists = tf.nn.softmax(next_outputs.rnn_output)
-        vocab_dists = tf.multiply(vocab_dists, p_gens)
-        one_minus_fn = lambda x: 1 - x
-        p_gens = tf.map_fn(one_minus_fn, p_gens)
-        attn_dists = tf.multiply(p_gens, attn_dists)
-
-        max_oov_len = tf.reduce_max(oov_sizes, reduction_indices=[0])
-
-        # Concatenate some zeros to each vocabulary dist, to hold the probabilities for in-article OOV words
-        extended_vsize =  decoder_vocab_size + max_oov_len # the maximum (over the batch) size of the extended vocabulary
-        extra_zeros = tf.zeros((batch_size, max_oov_len))
-        # vocab_dists_extended = [tf.concat(axis=1, values=[dist, extra_zeros]) for dist in vocab_dists] # list length max_dec_steps of shape (batch_size, extended_vsize)
-        vocab_dists_extended = array_ops.concat([vocab_dists, extra_zeros], axis=1)
-        # Project the values in the attention distributions onto the appropriate entries in the final distributions
-        # This means that if a_i = 0.1 and the ith encoder word is w, and w has index 500 in the vocabulary, then we add 0.1 onto the 500th entry of the final distribution
-        # This is done for each decoder timestep.
-        # This is fiddly; we use tf.scatter_nd to do the projection
-        batch_nums = tf.range(0, limit=batch_size) # shape (batch_size)
-        batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
-        attention_ids = tf.reshape(oov_ids, [batch_size, -1])
-        attn_len = tf.shape(attention_ids)[1] # number of states we attend over
-
-        batch_nums = tf.tile(batch_nums, [1, attn_len]) # shape (batch_size, attn_len)
-        indices = tf.stack( (batch_nums, attention_ids), axis=2) # shape (batch_size, enc_t, 2)
-        
-        shape = [batch_size, extended_vsize]
-        # attn_dists_projected = [tf.scatter_nd(indices, copy_dist, shape) for copy_dist in attn_dists] # list length max_dec_steps (batch_size, extended_vsize)
-        # attn_dists_projected = array_ops.scatter_nd(indices, attn_dists, shape)
-        attn_dists_projected = tf.scatter_nd(indices, attn_dists, shape)
-        # Add the vocab distributions and the copy distributions together to get the final distributions
-        # final_dists is a list length max_dec_steps; each entry is a tensor shape (batch_size, extended_vsize) giving the final distribution for that decoder timestep
-        # Note that for decoder timesteps and examples corresponding to a [PAD] token, this is junk - ignore.
-        # final_dists = [vocab_dist + copy_dist for (vocab_dist,copy_dist) in zip(vocab_dists_extended, attn_dists_projected)]
-        final_dists = math_ops.add(vocab_dists_extended, attn_dists_projected)
-        return BasicDecoderOutput(final_dists, next_outputs.sample_id)
-
     def condition(unused_time, unused_outputs_ta, unused_state, unused_inputs,
                   finished, unused_sequence_lengths, p_gens, attention):
       return math_ops.logical_not(math_ops.reduce_all(finished))
@@ -324,7 +327,7 @@ def dynamic_decode(decoder,
         ```
       """
       (next_outputs, next_attention, next_p_gens, decoder_state, next_inputs, decoder_finished) = \
-                                                                              decoder.step(time, inputs, state)
+          decoder.step(time, inputs, state, oov_ids, oov_sizes, decoder_vocab_size, batch_size)
       next_finished = math_ops.logical_or(decoder_finished, finished)
       if maximum_iterations is not None:
         next_finished = math_ops.logical_or(next_finished, time + 1 >= maximum_iterations)
@@ -338,10 +341,6 @@ def dynamic_decode(decoder,
       nest.assert_same_structure(inputs, next_inputs)
       nest.assert_same_structure(attention, next_attention)
       nest.assert_same_structure(p_gens, next_p_gens)
-
-      save = next_attention
-      next_outputs = _calc_final_dist(next_outputs, next_attention, next_p_gens)
-      next_attention = save
 
       # Zero out output values past finish
       if impute_finished:
