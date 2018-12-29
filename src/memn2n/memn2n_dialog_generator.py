@@ -72,29 +72,17 @@ class MemN2NGeneratorDialog(object):
 		## Encoding ##
 		encoder_states, line_memory, word_memory = self._encoder(self._stories, self._queries)
 		
-		# train_op 
-		loss_op, seq_loss_op, pgen_loss_op = self._decoder_train(encoder_states, line_memory, word_memory)
+		## Training ##
+		self.loss_op = self._decoder_train(encoder_states, line_memory, word_memory)
+
+		## Predicting ##
+		self.predict_op = self._decoder_runtime(encoder_states, line_memory, word_memory)
 
 		# gradient pipeline
-		grads_and_vars = self._opt.compute_gradients(loss_op)
+		grads_and_vars = self._opt.compute_gradients(self.loss_op[0])
 		grads_and_vars = [(tf.clip_by_norm(g, self._max_grad_norm), v) for g, v in grads_and_vars if g != None]
-		nil_grads_and_vars = []
-		for g, v in grads_and_vars:
-			if v.name in self._nil_vars:
-				nil_grads_and_vars.append((zero_nil_slot(g), v))
-			else:
-				nil_grads_and_vars.append((g, v))
-		train_op = self._opt.apply_gradients(nil_grads_and_vars, name="train_op")
-
-		# predict ops
-		predict_op = self._decoder_runtime(encoder_states, line_memory, word_memory)
-
-		# assign ops
-		self.loss_op = loss_op, seq_loss_op, pgen_loss_op
-		self.predict_op = predict_op
-		self.train_op = train_op
-
-		self.graph_output = self.loss_op
+		nil_grads_and_vars = [(zero_nil_slot(g), v) if v.name in self._nil_vars else (g, v) for g, v, in grads_and_vars]
+		self.train_op = self._opt.apply_gradients(nil_grads_and_vars, name="train_op")
 
 		init_op = tf.global_variables_initializer()
 		self._sess = glob['session']
@@ -129,21 +117,25 @@ class MemN2NGeneratorDialog(object):
 		'''
 		with tf.variable_scope(self._name):
 			nil_word_slot = tf.zeros([1, self._embedding_size])
+
+			# Initialize Embedding for Encoder
 			A = tf.concat([nil_word_slot, self._init([self._vocab_size - 1, self._embedding_size])], 0)
 			self.A = tf.Variable(A, name="A")
 			
+			# Initialize Embedding for Response-Decoder
 			C = tf.concat([nil_word_slot, self._init([self._decoder_vocab_size, self._embedding_size])], 0)
 			self.C = tf.Variable(C, name="C")
 
+			# Hop Context Vector to Output Query 
 			self.H = tf.Variable(self._init([self._embedding_size, self._embedding_size]), name="H")
-
-			with tf.variable_scope('decoder'):
-				self.decoder_cell = tf.contrib.rnn.GRUCell(self._embedding_size)
-				self.projection_layer = layers_core.Dense(self._decoder_vocab_size, use_bias=False)
 
 			with tf.variable_scope("encoder"):
 				self.encoder_fwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
 				self.encoder_bwd = tf.contrib.rnn.GRUCell(self._embedding_size / 2)
+
+			with tf.variable_scope('decoder'):
+				self.decoder_cell = tf.contrib.rnn.GRUCell(self._embedding_size)
+				self.projection_layer = layers_core.Dense(self._decoder_vocab_size, use_bias=False)
 
 			with tf.variable_scope('reduce_bow'):
 				# Define weights and biases to reduce the cell and reduce the state
