@@ -249,7 +249,7 @@ class MemN2NGeneratorDialog(object):
 				attention_mechanism = CustomAttention(self._embedding_size, reshaped_line_memory, reshaped_word_memory, hierarchy=self._hierarchy, soft_weight=self._soft_weight)
 				decoder_cell_with_attn = AttentionWrapper(self.decoder_cell, attention_mechanism, self._keep_prob, output_attention=False)			
 				wrapped_encoder_states = decoder_cell_with_attn.zero_state(batch_size, tf.float32).clone(cell_state=encoder_states)
-				decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, output_layer=self.projection_layer)
+				decoder = BasicDecoder(decoder_cell_with_attn, helper, wrapped_encoder_states, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, output_layer=self.projection_layer)
 				return decoder
 
 	def _decoder_train(self, encoder_states, line_memory, word_memory=None):
@@ -275,7 +275,7 @@ class MemN2NGeneratorDialog(object):
 				## Run Decoder ##
 				helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
 				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
-				outputs,p_gens = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
+				outputs,p_gens = dynamic_decode(decoder, self._batch_size)
 				
 				## Prepare Loss Helpers ##
 				final_dists = outputs.rnn_output
@@ -320,7 +320,7 @@ class MemN2NGeneratorDialog(object):
 				batch_size = tf.shape(self._stories)[0]
 				helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
 				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
-				outputs,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
+				outputs,_ = dynamic_decode(decoder, self._batch_size, maximum_iterations=2*self._candidate_sentence_size)
 			return tf.argmax(outputs.rnn_output, axis=-1)
 
 	def check_shape(self, name, array):
