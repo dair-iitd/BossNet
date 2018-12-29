@@ -275,7 +275,7 @@ class MemN2NGeneratorDialog(object):
 				## Run Decoder ##
 				helper = tf.contrib.seq2seq.TrainingHelper(decoder_emb_inp, answer_sizes)
 				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
-				outputs,_,_,p_gens,_,_,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
+				outputs,p_gens = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, impute_finished=False)
 				
 				## Prepare Loss Helpers ##
 				final_dists = outputs.rnn_output
@@ -320,7 +320,7 @@ class MemN2NGeneratorDialog(object):
 				batch_size = tf.shape(self._stories)[0]
 				helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(self.C,tf.fill([batch_size], self.GO_SYMBOL), self.EOS)
 				decoder = self._get_decoder(encoder_states, line_memory, word_memory, helper, batch_size)
-				outputs,_,_,_,_,_,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
+				outputs,_ = dynamic_decode(decoder, self._batch_size, self._decoder_vocab_size, self._oov_sizes, self._oov_ids, maximum_iterations=2*self._candidate_sentence_size)
 			return tf.argmax(outputs.rnn_output, axis=-1)
 
 	def check_shape(self, name, array):

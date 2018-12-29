@@ -140,7 +140,7 @@ class BasicDecoder(Decoder):
     """
     with ops.name_scope(name, "BasicDecoderStep", (time, inputs, state)):
       cell_outputs, cell_state = self._cell(inputs, state)
-      (cell_outputs, line_alignments, word_alignments, attention, p_gens) = cell_outputs
+      (cell_outputs, attention, p_gens) = cell_outputs
       if self._output_layer is not None:
         cell_outputs = self._output_layer(cell_outputs)
       sample_ids = self._helper.sample(
@@ -151,7 +151,7 @@ class BasicDecoder(Decoder):
           state=cell_state,
           sample_ids=sample_ids)
     outputs = BasicDecoderOutput(cell_outputs, sample_ids)
-    return (outputs, line_alignments, word_alignments, attention, p_gens, next_state, next_inputs, finished)
+    return (outputs, attention, p_gens, next_state, next_inputs, finished)
 
 
 def _create_zero_outputs(size, dtype, batch_size):
@@ -255,10 +255,6 @@ def dynamic_decode(decoder,
                                             decoder.output_dtype)
     initial_attention = nest.map_structure(_create_ta, tensor_shape.TensorShape(None),
                                               dtypes.float32)
-    initial_line_alignment = nest.map_structure(_create_ta, tensor_shape.TensorShape(None),
-                                              dtypes.float32)
-    initial_word_alignment = nest.map_structure(_create_ta, tensor_shape.TensorShape(None),
-                                              dtypes.float32)
     initial_p_gens = nest.map_structure(_create_ta, tensor_shape.TensorShape(1),
                                               dtypes.float32)
 
@@ -310,10 +306,10 @@ def dynamic_decode(decoder,
         return BasicDecoderOutput(final_dists, next_outputs.sample_id)
 
     def condition(unused_time, unused_outputs_ta, unused_state, unused_inputs,
-                  finished, unused_sequence_lengths, p_gens, attention, line_alignments, word_alignments):
+                  finished, unused_sequence_lengths, p_gens, attention):
       return math_ops.logical_not(math_ops.reduce_all(finished))
 
-    def body(time, outputs_ta, state, inputs, finished, sequence_lengths, p_gens, attention, line_alignments, word_alignments):
+    def body(time, outputs_ta, state, inputs, finished, sequence_lengths, p_gens, attention):
       """Internal while_loop body.
       Args:
         time: scalar int32 tensor.
@@ -327,12 +323,11 @@ def dynamic_decode(decoder,
           next_sequence_lengths)`.
         ```
       """
-      (next_outputs, next_line_alignment, next_word_alignment, next_attention, next_p_gens, decoder_state, next_inputs,
-       decoder_finished) = decoder.step(time, inputs, state)
+      (next_outputs, next_attention, next_p_gens, decoder_state, next_inputs, decoder_finished) = \
+                                                                              decoder.step(time, inputs, state)
       next_finished = math_ops.logical_or(decoder_finished, finished)
       if maximum_iterations is not None:
-        next_finished = math_ops.logical_or(
-            next_finished, time + 1 >= maximum_iterations)
+        next_finished = math_ops.logical_or(next_finished, time + 1 >= maximum_iterations)
       next_sequence_lengths = array_ops.where(
           math_ops.logical_and(math_ops.logical_not(finished), next_finished),
           array_ops.fill(array_ops.shape(sequence_lengths), time + 1),
@@ -343,8 +338,6 @@ def dynamic_decode(decoder,
       nest.assert_same_structure(inputs, next_inputs)
       nest.assert_same_structure(attention, next_attention)
       nest.assert_same_structure(p_gens, next_p_gens)
-      nest.assert_same_structure(line_alignments, next_line_alignment)
-      nest.assert_same_structure(word_alignments, next_word_alignment)
 
       save = next_attention
       next_outputs = _calc_final_dist(next_outputs, next_attention, next_p_gens)
@@ -370,8 +363,7 @@ def dynamic_decode(decoder,
         return new if pass_through else array_ops.where(finished, cur, new)
 
       if impute_finished:
-        next_state = nest.map_structure(
-            _maybe_copy_state, decoder_state, state)
+        next_state = nest.map_structure(_maybe_copy_state, decoder_state, state)
       else:
         next_state = decoder_state
 
@@ -381,20 +373,14 @@ def dynamic_decode(decoder,
                                        attention, next_attention)
       p_gens = nest.map_structure(lambda ta, out: ta.write(time, out),
                                        p_gens, next_p_gens)
-      line_alignments = nest.map_structure(lambda ta, out: ta.write(time, out),
-                                       line_alignments, next_line_alignment)
-      word_alignments = nest.map_structure(lambda ta, out: ta.write(time, out),
-                                       word_alignments, next_word_alignment)
-      return (time + 1, outputs_ta, next_state, next_inputs, next_finished,
-              next_sequence_lengths, p_gens, attention, line_alignments, word_alignments)
+      return (time + 1, outputs_ta, next_state, next_inputs, next_finished,next_sequence_lengths, p_gens, attention)
 
     res = control_flow_ops.while_loop(
         condition,
         body,
         loop_vars=[
             initial_time, initial_outputs_ta, initial_state, initial_inputs,
-            initial_finished, initial_sequence_lengths, initial_p_gens, initial_attention, initial_line_alignment, initial_word_alignment,
-        ],
+            initial_finished, initial_sequence_lengths, initial_p_gens, initial_attention],
         parallel_iterations=parallel_iterations,
         swap_memory=swap_memory)
 
@@ -403,28 +389,15 @@ def dynamic_decode(decoder,
     final_sequence_lengths = res[5]
     final_p_gens = res[6]
     final_attention = res[7]
-    final_line_alignment = res[8]
-    final_word_alignment = res[9]
 
     final_outputs = nest.map_structure(lambda ta: ta.stack(), final_outputs_ta)
     final_attention = nest.map_structure(lambda ta: ta.stack(), final_attention)
-    final_line_alignment = nest.map_structure(lambda ta: ta.stack(), final_line_alignment)
-    final_word_alignment = nest.map_structure(lambda ta: ta.stack(), final_word_alignment)
     final_p_gens = nest.map_structure(lambda ta: ta.stack(), final_p_gens)
-
-    # try:
-    #   final_outputs, final_state = decoder.finalize(
-    #       final_outputs, final_state, final_sequence_lengths)
-    # except NotImplementedError:
-    #   pass
 
     if not output_time_major:
       final_outputs = nest.map_structure(_transpose_batch_time, final_outputs)
       final_p_gens = nest.map_structure(_transpose_batch_time, final_p_gens)
       final_attention = nest.map_structure(_transpose_batch_time, final_attention)
-      final_line_alignment = nest.map_structure(_transpose_batch_time, final_line_alignment)
-      final_word_alignment = nest.map_structure(_transpose_batch_time, final_word_alignment)
 
-
-  return final_outputs, final_state, final_sequence_lengths, final_p_gens, final_attention, final_line_alignment, final_word_alignment
+  return final_outputs, final_p_gens
 
