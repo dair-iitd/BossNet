@@ -100,13 +100,21 @@ def get_tokenized_response_from_padded_vector(vector, word_map, oov):
 		else:				final.append('UNK')
 	return ' '.join(final)
 
-def BLEU(preds, golds, word_map, did, oovs):
+def BLEU(preds, golds, word_map, did, oovs, args):
 	tokenized_preds = []
 	tokenized_golds = []
 
+	if args.logging:
+		file = open(args.logs_dir + 'output.log', 'w+')
+
 	for i, (pred, gold) in enumerate(zip(preds, golds)):
-		tokenized_preds.append(get_tokenized_response_from_padded_vector(pred, word_map, oovs[did[i]]))
-		tokenized_golds.append(get_tokenized_response_from_padded_vector(gold, word_map, oovs[did[i]]))
+		sent_pred = get_tokenized_response_from_padded_vector(pred, word_map, oovs[did[i]])
+		sent_gold = get_tokenized_response_from_padded_vector(gold, word_map, oovs[did[i]])
+		tokenized_preds.append(sent_pred)
+		tokenized_golds.append(sent_gold)
+		if args.logging:
+			file.write("PRED : {}\n".format(sent_pred))
+			file.write("GOLD : {}\n".format(sent_gold))
 	return "{:.2f}".format(moses_multi_bleu(tokenized_preds, tokenized_golds, True))
 
 def tokenize(vals, dids):
@@ -175,7 +183,7 @@ def evaluate(args, glob, predictions, data):
 	preds, golds, dids = merge(ordered_orig, True)
 
 	output = {}
-	output['bleu'] = float(BLEU(preds, golds, word_map, dids, ordered_oovs))
+	output['bleu'] = float(BLEU(preds, golds, word_map, dids, ordered_oovs, args))
 	acc, dial = accuracy(preds, golds, dids)
 	output['acc'] = float(acc)
 	output['dialog'] = float(dial)

@@ -32,6 +32,7 @@ flags.DEFINE_integer("evaluation_interval", 1, "Evaluate and print results every
 flags.DEFINE_boolean("bleu_score", True, 'if True, uses BLUE word score to compute best model')
 flags.DEFINE_boolean("save", False, "if True, trains using previously saved model")
 flags.DEFINE_boolean("debug", False, 'if True, enables debug mode (Verbose Errors, but slower)')
+flags.DEFINE_boolean("logging", False, "Turn on Logging for outputs")
 
 # Task Type
 flags.DEFINE_integer("task_id", 7, "bAbI task id, 1 <= id <= 8")
@@ -43,6 +44,7 @@ flags.DEFINE_string("data_dir", "../data/dialog-bAbI-tasks/", "Directory contain
 flags.DEFINE_string("logs_dir", "logs/", "Directory containing bAbI tasks")
 flags.DEFINE_string("model_dir", "model/", "Directory containing memn2n model checkpoints")
 flags.DEFINE_string("kb_file", "../data/dialog-bAbI-tasks/dialog-camrest-kb-all.txt", "kb file for this task")
+
 
 def get_params():
 	return flags.FLAGS
@@ -74,6 +76,7 @@ def print_params(logging, args):
 	logging.info('[{}] : {}'.format('bleu_score', args.bleu_score))
 	logging.info('[{}] : {}'.format('save', args.save))
 	logging.info('[{}] : {}'.format('debug', args.debug))
+	logging.info('[{}] : {}'.format('logging', args.logging))
 	
 	print('\n# {}'.format('Task Type'))
 	logging.info('[{}] : {}'.format('task_id', args.task_id))
@@ -84,4 +87,6 @@ def print_params(logging, args):
 	logging.info('[{}] : {}'.format('model_dir', args.model_dir))
 	logging.info('[{}] : {}'.format('data_dir', args.data_dir.split('/')[-2]))
 	logging.info('[{}] : {}'.format('kb_file', args.kb_file))
+	
+
 
