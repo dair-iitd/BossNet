@@ -124,7 +124,7 @@ def parse_dialogs(file):
             nid = int(nid)
             if '\t' in line:
                 u, r = map(tokenize, line.split('\t'))
-                data.append((context, u.copy(), r.copy(), dialog_id, turn_id))
+                data.append((context[:], u[:], r[:], dialog_id, turn_id))
                 u.extend(['$u', '#{}'.format(nid)])
                 r.extend(['$r', '#{}'.format(nid)])
                 context.append(u); context.append(r)
