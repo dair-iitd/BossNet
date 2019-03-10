@@ -46,8 +46,10 @@ class chatBot(object):
 		self.build_vocab(self.trainData)
 
 		# Define MemN2N + Generator Model
+		config = tf.ConfigProto()
+		config.gpu_options.allow_growth = True
+		glob['session'] = tf.Session(config=config)
 		glob['optimizer'] = tf.train.AdamOptimizer(learning_rate=args.learning_rate, epsilon=args.epsilon)
-		glob['session'] = tf.Session()
 		self.model = MemN2NGeneratorDialog(args, glob)
 		self.saver = tf.train.Saver(max_to_keep=4)
 
