@@ -4,12 +4,14 @@ from __future__ import division
 import tensorflow as tf
 from tensorflow.python.layers import core as layers_core
 import numpy as np
+import sys
 from six.moves import range
 from datetime import datetime
 from tensorflow.python.ops import rnn
 from tensorflow.python.util import nest
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
+from tensorflow.python.client import timeline
 from memn2n.dynamic_decoder import *
 from memn2n.attention_wrapper import *
 
@@ -375,7 +377,14 @@ class MemN2NGeneratorDialog(object):
 			loss: floating-point number, the loss computed for the batch
 		"""
 		feed_dict = self._make_feed_dict(batch)
-		loss, _= self._sess.run([self.loss_op, self.train_op], feed_dict=feed_dict)
+		options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+		run_metadata = tf.RunMetadata()
+		loss, _= self._sess.run([self.loss_op, self.train_op], feed_dict=feed_dict, options=options, run_metadata=run_metadata)
+		fetched_timeline = timeline.Timeline(run_metadata.step_stats)
+		chrome_trace = fetched_timeline.generate_chrome_trace_format()
+		with open('timeline.json', 'w') as f:
+			f.write(chrome_trace)
+		sys.exit()
 		return loss
 
 	def predict(self, batch):

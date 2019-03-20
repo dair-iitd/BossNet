@@ -14,17 +14,17 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from sklearn.metrics import f1_score
 
-__all__ =  ["get_decoder_vocab", 
-            "load_dialog_task", 
-            "tokenize", 
-            "pad_to_answer_size", 
-            "create_batches"]
+__all__ = ["get_decoder_vocab",
+           "load_dialog_task",
+           "tokenize",
+           "pad_to_answer_size",
+           "create_batches"]
 
 ###################################################################################################
 #########                                  Global Variables                              ##########
 ###################################################################################################
 
-stop_words=set(["a","an","the"])
+stop_words = set(["a", "an", "the"])
 PAD_INDEX = 0
 UNK_INDEX = 1
 GO_SYMBOL_INDEX = 2
@@ -34,16 +34,17 @@ EOS_INDEX = 3
 #########                                 Dialog Manipulators                            ##########
 ###################################################################################################
 
+
 def get_decoder_vocab(data_dir, task_id):
     ''' 
         Load Vocabulary Space for Response-Decoder 
     '''
     assert task_id > 0 and task_id < 9
-    decoder_vocab_to_index={}
-    decoder_vocab_to_index['PAD']=PAD_INDEX             # Pad Symbol
-    decoder_vocab_to_index['UNK']=UNK_INDEX             # Unknown Symbol
-    decoder_vocab_to_index['GO_SYMBOL']=GO_SYMBOL_INDEX # Start Symbol
-    decoder_vocab_to_index['EOS']=EOS_INDEX             # End Symbol
+    decoder_vocab_to_index = {}
+    decoder_vocab_to_index['PAD'] = PAD_INDEX             # Pad Symbol
+    decoder_vocab_to_index['UNK'] = UNK_INDEX             # Unknown Symbol
+    decoder_vocab_to_index['GO_SYMBOL'] = GO_SYMBOL_INDEX  # Start Symbol
+    decoder_vocab_to_index['EOS'] = EOS_INDEX             # End Symbol
 
     files = os.listdir(data_dir)
     files = [os.path.join(data_dir, f) for f in files]
@@ -52,23 +53,25 @@ def get_decoder_vocab(data_dir, task_id):
     candidate_sentence_size = 0
     responses = get_responses(train_file)
     for response in responses:
-        line=tokenize(response.strip())
+        line = tokenize(response.strip())
         candidate_sentence_size = max(len(line), candidate_sentence_size)
         for word in line:
             if word not in decoder_vocab_to_index:
                 index = len(decoder_vocab_to_index)
-                decoder_vocab_to_index[word]=index
+                decoder_vocab_to_index[word] = index
     decoder_index_to_vocab = {v: k for k, v in decoder_vocab_to_index.items()}
-    return decoder_vocab_to_index, decoder_index_to_vocab, candidate_sentence_size+1 #(EOS)
+    # (EOS)
+    return decoder_vocab_to_index, decoder_index_to_vocab, candidate_sentence_size+1
+
 
 def get_responses(file):
     '''
         Parse dialogs provided in the babi tasks format
     '''
-    responses=[]
+    responses = []
     with open(file) as f:
         for line in f.readlines():
-            line=line.strip()
+            line = line.strip()
             if line and '\t' in line:
                 u, r = line.split('\t')
                 responses.append(r)
@@ -84,7 +87,8 @@ def load_dialog_task(data_dir, task_id):
     files = [os.path.join(data_dir, f) for f in files]
     s = 'dialog-babi-task{}-'.format(task_id)
     train_file = [f for f in files if s in f and 'trn' in f][0]
-    test_file = [f for f in files if s in f and 'tst' in f and 'OOV' not in f][0]
+    test_file = [
+        f for f in files if s in f and 'tst' in f and 'OOV' not in f][0]
     val_file = [f for f in files if s in f and 'dev' in f][0]
     train_data = parse_dialogs(train_file)
     test_data = parse_dialogs(test_file)
@@ -93,8 +97,9 @@ def load_dialog_task(data_dir, task_id):
         oov_file = [f for f in files if s in f and 'tst-OOV' in f][0]
         oov_data = parse_dialogs(oov_file)
     else:
-        oov_data = None        
+        oov_data = None
     return train_data, test_data, val_data, oov_data
+
 
 def tokenize(sent):
     '''
@@ -102,23 +107,27 @@ def tokenize(sent):
         >>> tokenize('Bob dropped the apple. Where is the apple?')
         ['Bob', 'dropped', 'the', 'apple', '.', 'Where', 'is', 'the', 'apple']
     '''
-    sent=sent.lower()
-    if sent=='<silence>': return [sent]
-    result=[x.strip() for x in re.split('(\W+)?', sent) if x.strip()]
+    sent = sent.lower()
+    if sent == '<silence>':
+        return [sent]
+    result = [x.strip() for x in re.split('(\W+)?', sent) if x.strip()]
     if not result:
-        result=['<silence>']
-    if result[-1]=='.' or result[-1]=='?' or result[-1]=='!':
-        result=result[:-1]
+        result = ['<silence>']
+    if result[-1] == '.' or result[-1] == '?' or result[-1] == '!':
+        result = result[:-1]
     return result
+
 
 def parse_dialogs(file):
     '''
         Parse dialogs provided in the babi tasks format
     '''
-    data=[]; context=[]
-    dialog_id=1; turn_id=1
+    data = []
+    context = []
+    dialog_id = 1
+    turn_id = 1
     for line in open(file).readlines():
-        line=line.strip()
+        line = line.strip()
         if line:
             nid, line = line.split(' ', 1)
             nid = int(nid)
@@ -127,16 +136,18 @@ def parse_dialogs(file):
                 data.append((context[:], u[:], r[:], dialog_id, turn_id))
                 u.extend(['$u', '#{}'.format(nid)])
                 r.extend(['$r', '#{}'.format(nid)])
-                context.append(u); context.append(r)
+                context.append(u)
+                context.append(r)
                 turn_id += 1
             else:
-                r=tokenize(line)
+                r = tokenize(line)
                 r.extend(['$db', '#{}'.format(nid)])
                 context.append(r)
         else:
             # clear context / start of new dialog
-            dialog_id+=1; turn_id=1
-            context=[]
+            dialog_id += 1
+            turn_id = 1
+            context = []
     return data
 
 
@@ -160,9 +171,12 @@ def create_batches(data, batch_size):
         batches.append((batches[-1][1], size))
     return batches
 
+
 def pad_to_answer_size(pred, size):
     for i, list in enumerate(pred):
         sz = len(list)
-        if sz >= size:  pred[i] = list[:size]
-        else:           pred[i] = np.append(list, np.array([PAD_INDEX] * (size - sz)))
+        if sz >= size:
+            pred[i] = list[:size]
+        else:
+            pred[i] = np.append(list, np.array([PAD_INDEX] * (size - sz)))
     return pred
