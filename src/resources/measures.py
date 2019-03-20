@@ -2,14 +2,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
-import numpy
 
+import numpy
+import numpy as np
 import os
 import re
 import subprocess
 import tempfile
-import numpy as np
-
 from six.moves import urllib
 
 

@@ -1,10 +1,10 @@
 from __future__ import absolute_import
 from __future__ import division
 
-import tensorflow as tf
-from tensorflow.python.layers import core as layers_core
 import numpy as np
 import sys
+import tensorflow as tf
+
 from six.moves import range
 from datetime import datetime
 from tensorflow.python.ops import rnn
@@ -12,6 +12,7 @@ from tensorflow.python.util import nest
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.client import timeline
+from tensorflow.python.layers import core as layers_core
 from memn2n.dynamic_decoder import *
 from memn2n.attention_wrapper import *
 

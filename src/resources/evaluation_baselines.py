@@ -1,12 +1,12 @@
 import json
 import numpy as np
-from measures import moses_multi_bleu
-from sklearn.metrics import f1_score
 import pickle as pkl
-from collections import defaultdict
+import random
 import re
 import sys
-import random
+from collections import defaultdict
+from measures import moses_multi_bleu
+from sklearn.metrics import f1_score
 
 stop_words = set(["a", "an", "the"])
 PAD_INDEX = 0

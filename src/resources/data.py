@@ -1,7 +1,6 @@
 import numpy as np
 import pdb
 import random
-
 from itertools import chain
 
 PAD_INDEX = 0
