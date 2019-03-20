@@ -11,7 +11,6 @@ from tensorflow.python.ops import rnn
 from tensorflow.python.util import nest
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
-from tensorflow.python.client import timeline
 from tensorflow.python.layers import core as layers_core
 from memn2n.dynamic_decoder import *
 from memn2n.attention_wrapper import *
@@ -379,14 +378,7 @@ class MemN2NGeneratorDialog(object):
                 loss: floating-point number, the loss computed for the batch
         """
         feed_dict = self._make_feed_dict(batch)
-        options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-        run_metadata = tf.RunMetadata()
-        loss, _ = self._sess.run([self.loss_op, self.train_op], feed_dict=feed_dict, options=options, run_metadata=run_metadata)
-        fetched_timeline = timeline.Timeline(run_metadata.step_stats)
-        chrome_trace = fetched_timeline.generate_chrome_trace_format()
-        with open('timeline.json', 'w') as f:
-            f.write(chrome_trace)
-        sys.exit()
+        loss, _ = self._sess.run([self.loss_op, self.train_op], feed_dict=feed_dict)
         return loss
 
     def predict(self, batch):
