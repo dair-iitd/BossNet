@@ -60,8 +60,7 @@ def get_decoder_vocab(data_dir, task_id):
                 index = len(decoder_vocab_to_index)
                 decoder_vocab_to_index[word] = index
     decoder_index_to_vocab = {v: k for k, v in decoder_vocab_to_index.items()}
-    # (EOS)
-    return decoder_vocab_to_index, decoder_index_to_vocab, candidate_sentence_size+1
+    return decoder_vocab_to_index, decoder_index_to_vocab, candidate_sentence_size + 1  # (EOS)
 
 
 def get_responses(file):
@@ -87,8 +86,7 @@ def load_dialog_task(data_dir, task_id):
     files = [os.path.join(data_dir, f) for f in files]
     s = 'dialog-babi-task{}-'.format(task_id)
     train_file = [f for f in files if s in f and 'trn' in f][0]
-    test_file = [
-        f for f in files if s in f and 'tst' in f and 'OOV' not in f][0]
+    test_file = [f for f in files if s in f and 'tst' in f and 'OOV' not in f][0]
     val_file = [f for f in files if s in f and 'dev' in f][0]
     train_data = parse_dialogs(train_file)
     test_data = parse_dialogs(test_file)

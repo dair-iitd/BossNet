@@ -27,8 +27,7 @@ class chatBot(object):
 
     def __init__(self):
         # Create Model Store Directory
-        self.model_dir = args.model_dir + "task" + str(args.task_id) + "_" + args.data_dir.split('/')[-2] + "_lr-" + str(args.learning_rate) + "_hops-" + str(
-            args.hops) + "_emb-size-" + str(args.embedding_size) + "_sw-" + str(args.soft_weight) + "_wd-" + str(args.word_drop_prob) + "_pw-" + str(args.p_gen_loss_weight) + "_model/"
+        self.model_dir = args.model_dir + "task" + str(args.task_id) + "_" + args.data_dir.split('/')[-2] + "_lr-" + str(args.learning_rate) + "_hops-" + str(args.hops) + "_emb-size-" + str(args.embedding_size) + "_sw-" + str(args.soft_weight) + "_wd-" + str(args.word_drop_prob) + "_pw-" + str(args.p_gen_loss_weight) + "_model/"
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
 
@@ -38,15 +37,12 @@ class chatBot(object):
 		'''
 
         # 1) Load Response-Decoder Vocabulary
-        glob['decode_idx'], glob['idx_decode'], glob['candidate_sentence_size'] = get_decoder_vocab(
-            args.data_dir, args.task_id)
+        glob['decode_idx'], glob['idx_decode'], glob['candidate_sentence_size'] = get_decoder_vocab(args.data_dir, args.task_id)
         print("Decoder Vocab Size : {}".format(len(glob['decode_idx'])))
-        print("candidate_sentence_size : {}".format(
-            glob['candidate_sentence_size']))
+        print("candidate_sentence_size : {}".format(glob['candidate_sentence_size']))
         sys.stdout.flush()
         # Retreive Task Data
-        self.trainData, self.testData, self.valData, self.testOOVData = load_dialog_task(
-            args.data_dir, args.task_id)
+        self.trainData, self.testData, self.valData, self.testOOVData = load_dialog_task(args.data_dir, args.task_id)
 
         # 2) Build the Context Vocabulary
         self.build_vocab(self.trainData)
@@ -55,8 +51,7 @@ class chatBot(object):
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         glob['session'] = tf.Session(config=config)
-        glob['optimizer'] = tf.train.AdamOptimizer(
-            learning_rate=args.learning_rate, epsilon=args.epsilon)
+        glob['optimizer'] = tf.train.AdamOptimizer(learning_rate=args.learning_rate, epsilon=args.epsilon)
         self.model = MemN2NGeneratorDialog(args, glob)
         self.saver = tf.train.Saver(max_to_keep=4)
 
@@ -64,8 +59,7 @@ class chatBot(object):
         '''
                 Get vocabulary from the Train data
         '''
-        vocab = reduce(lambda x, y: x | y, (set(
-            list(chain.from_iterable(s)) + q) for s, q, a, _, _ in data))
+        vocab = reduce(lambda x, y: x | y, (set(list(chain.from_iterable(s)) + q) for s, q, a, _, _ in data))
         vocab = sorted(vocab)
         glob['word_idx'] = dict((c, i + 2) for i, c in enumerate(vocab))
         glob['word_idx'][''] = 0
@@ -75,8 +69,7 @@ class chatBot(object):
         print("Context Vocab Size : {}".format(glob['vocab_size']))
         sys.stdout.flush()
 
-        sentence_size = max(
-            map(len, chain.from_iterable(s for s, _, _, _, _ in data)))
+        sentence_size = max(map(len, chain.from_iterable(s for s, _, _, _, _ in data)))
         query_size = max(map(len, (q for _, q, _, _, _ in data)))
         glob['sentence_size'] = max(query_size, sentence_size)
 
@@ -137,8 +130,7 @@ class chatBot(object):
             if epoch % args.evaluation_interval == 0:
                 print('*Predict Train*')
                 sys.stdout.flush()
-                train_accuracies = self.batch_predict(
-                    Data_train, batches_train)
+                train_accuracies = self.batch_predict(Data_train, batches_train)
                 print('*Predict Validation*')
                 sys.stdout.flush()
                 val_accuracies = self.batch_predict(Data_val, batches_val)
@@ -147,24 +139,16 @@ class chatBot(object):
                 print('Epoch {}'.format(epoch))
                 print('Loss: {}'.format(total_cost))
                 if args.bleu_score:
-                    print('{0:30} : {1:6f}'.format(
-                        "Train BLEU", train_accuracies['bleu']))
-                print('{0:30} : {1:6f}'.format(
-                    "Train Accuracy", train_accuracies['acc']))
-                print('{0:30} : {1:6f}'.format(
-                    "Train Dialog", train_accuracies['dialog']))
-                print('{0:30} : {1:6f}'.format(
-                    "Train F1", train_accuracies['f1']))
+                    print('{0:30} : {1:6f}'.format("Train BLEU", train_accuracies['bleu']))
+                print('{0:30} : {1:6f}'.format("Train Accuracy", train_accuracies['acc']))
+                print('{0:30} : {1:6f}'.format("Train Dialog", train_accuracies['dialog']))
+                print('{0:30} : {1:6f}'.format("Train F1", train_accuracies['f1']))
                 print('------------')
                 if args.bleu_score:
-                    print('{0:30} : {1:6f}'.format(
-                        "Validation BLEU", val_accuracies['bleu']))
-                print('{0:30} : {1:6f}'.format(
-                    "Validation Accuracy", val_accuracies['acc']))
-                print('{0:30} : {1:6f}'.format(
-                    "Validation Dialog", val_accuracies['dialog']))
-                print('{0:30} : {1:6f}'.format(
-                    "Validation F1", val_accuracies['f1']))
+                    print('{0:30} : {1:6f}'.format("Validation BLEU", val_accuracies['bleu']))
+                print('{0:30} : {1:6f}'.format("Validation Accuracy", val_accuracies['acc']))
+                print('{0:30} : {1:6f}'.format("Validation Dialog", val_accuracies['dialog']))
+                print('{0:30} : {1:6f}'.format("Validation F1", val_accuracies['f1']))
                 print('------------')
                 sys.stdout.flush()
 
@@ -172,8 +156,7 @@ class chatBot(object):
                 val_to_compare = val_accuracies['comp']
                 if val_to_compare >= best_validation_accuracy:
                     best_validation_accuracy = val_to_compare
-                    self.saver.save(
-                        glob['session'], self.model_dir + 'model.ckpt', global_step=epoch)
+                    self.saver.save(glob['session'], self.model_dir + 'model.ckpt', global_step=epoch)
                     print('MODEL SAVED')
 
                 # Evaluate on Test datasets
@@ -183,31 +166,22 @@ class chatBot(object):
                 if args.task_id < 6:
                     print('*Predict OOV*')
                     sys.stdout.flush()
-                    test_oov_accuracies = self.batch_predict(
-                        Data_test_OOV, batches_oov)
+                    test_oov_accuracies = self.batch_predict(Data_test_OOV, batches_oov)
 
                 print('-----------------------')
                 print('SUMMARY')
                 if args.bleu_score:
-                    print('{0:30} : {1:6f}'.format(
-                        "Test BLEU", test_accuracies['bleu']))
-                print('{0:30} : {1:6f}'.format(
-                    "Test Accuracy", test_accuracies['acc']))
-                print('{0:30} : {1:6f}'.format(
-                    "Test Dialog", test_accuracies['dialog']))
-                print('{0:30} : {1:6f}'.format(
-                    "Test F1", test_accuracies['f1']))
+                    print('{0:30} : {1:6f}'.format("Test BLEU", test_accuracies['bleu']))
+                print('{0:30} : {1:6f}'.format("Test Accuracy", test_accuracies['acc']))
+                print('{0:30} : {1:6f}'.format("Test Dialog", test_accuracies['dialog']))
+                print('{0:30} : {1:6f}'.format("Test F1", test_accuracies['f1']))
                 if args.task_id < 6:
                     print('------------')
                     if args.bleu_score:
-                        print('{0:30} : {1:6f}'.format(
-                            "Test OOV BLEU", test_oov_accuracies['bleu']))
-                    print('{0:30} : {1:6f}'.format(
-                        "Test OOV Accuracy", test_oov_accuracies['acc']))
-                    print('{0:30} : {1:6f}'.format(
-                        "Test OOV Dialog", test_oov_accuracies['dialog']))
-                    print('{0:30} : {1:6f}'.format(
-                        "Test OOV F1", test_oov_accuracies['f1']))
+                        print('{0:30} : {1:6f}'.format("Test OOV BLEU", test_oov_accuracies['bleu']))
+                    print('{0:30} : {1:6f}'.format("Test OOV Accuracy", test_oov_accuracies['acc']))
+                    print('{0:30} : {1:6f}'.format("Test OOV Dialog", test_oov_accuracies['dialog']))
+                    print('{0:30} : {1:6f}'.format("Test OOV F1", test_oov_accuracies['f1']))
                 print('-----------------------')
                 sys.stdout.flush()
 
@@ -240,12 +214,9 @@ class chatBot(object):
         print('-----------------------')
         print('SUMMARY')
         if args.bleu_score:
-            print('{0:30} : {1:6f}'.format(
-                "Test BLEU", test_accuracies['bleu']))
-        print('{0:30} : {1:6f}'.format(
-            "Test Accuracy", test_accuracies['acc']))
-        print('{0:30} : {1:6f}'.format(
-            "Test Dialog", test_accuracies['dialog']))
+            print('{0:30} : {1:6f}'.format("Test BLEU", test_accuracies['bleu']))
+        print('{0:30} : {1:6f}'.format("Test Accuracy", test_accuracies['acc']))
+        print('{0:30} : {1:6f}'.format("Test Dialog", test_accuracies['dialog']))
         print('{0:30} : {1:6f}'.format("Test F1", test_accuracies['f1']))
         print("------------------------")
         sys.stdout.flush()
@@ -267,8 +238,7 @@ class chatBot(object):
             total_seq += seq_loss
             total_pgen += pgen_loss
             total_cost += cost_t
-            pbar.set_description('TL:{:.2f}, SL:{:.2f}, PL:{:.2f}'.format(
-                total_cost/(i+1), total_seq/(i+1), total_pgen/(i+1)))
+            pbar.set_description('TL:{:.2f}, SL:{:.2f}, PL:{:.2f}'.format(total_cost / (i + 1), total_seq / (i + 1), total_pgen / (i + 1)))
         return total_cost
 
     def batch_predict(self, data, batches):
@@ -284,8 +254,7 @@ class chatBot(object):
             preds = self.model.predict(data_batch)
 
             # Store prediction outputs
-            predictions += pad_to_answer_size(list(preds),
-                                              glob['candidate_sentence_size'])
+            predictions += pad_to_answer_size(list(preds), glob['candidate_sentence_size'])
 
         # Evaluate metrics
         return evaluate(args, glob, predictions, data)
@@ -297,8 +266,7 @@ class chatBot(object):
 ''' Main Function '''
 if __name__ == '__main__':
 
-    logging.basicConfig(format='%(levelname)s:%(message)s',
-                        level=logging.DEBUG)
+    logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 
     chatbot = chatBot()
     print("CHATBOT READY")

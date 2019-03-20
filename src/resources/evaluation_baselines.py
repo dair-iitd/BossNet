@@ -27,8 +27,7 @@ def get_surface_form(index_list, word_map, oov_words, context=False):
     if context:
         surfaces = []
         for story_line in index_list:
-            surfaces.append(
-                [word_map[i] if i in word_map else oov_words[i - size] for i in story_line])
+            surfaces.append([word_map[i] if i in word_map else oov_words[i - size] for i in story_line])
         return surfaces
     else:
         lst = []
@@ -65,14 +64,12 @@ def accuracy(preds, golds, dialog_ids):
 
     # Calculate Response Accuracy
     size = len(preds)
-    response_accuracy = "{:.2f}".format(
-        float(total_score) * 100.0 / float(size))
+    response_accuracy = "{:.2f}".format(float(total_score) * 100.0 / float(size))
 
     # Calculate Dialog Accuracy
     dialog_size = len(dialog_dict)
     correct_dialogs = list(dialog_dict.values()).count(1)
-    dialog_accuracy = "{:.2f}".format(
-        float(correct_dialogs) * 100.0 / float(dialog_size))
+    dialog_accuracy = "{:.2f}".format(float(correct_dialogs) * 100.0 / float(dialog_size))
 
     return response_accuracy, dialog_accuracy
 
@@ -102,7 +99,7 @@ def f1(preds, golds, entities, word_map):
         re += re_temp
         pr += pr_temp
 
-    return "{:.2f}".format(100*f1_score(re, pr, average='micro'))
+    return "{:.2f}".format(100 * f1_score(re, pr, average='micro'))
 
 
 def get_tokenized_response_from_padded_vector(vector, word_map):
@@ -114,10 +111,8 @@ def BLEU(preds, golds, word_map):
     tokenized_golds = []
 
     for pred, gold in zip(preds, golds):
-        tokenized_preds.append(
-            get_tokenized_response_from_padded_vector(pred, word_map))
-        tokenized_golds.append(
-            get_tokenized_response_from_padded_vector(gold, word_map))
+        tokenized_preds.append(get_tokenized_response_from_padded_vector(pred, word_map))
+        tokenized_golds.append(get_tokenized_response_from_padded_vector(gold, word_map))
 
     return "{:.2f}".format(moses_multi_bleu(tokenized_preds, tokenized_golds, True))
 
@@ -138,7 +133,7 @@ def tokenize(vals, dids):
                 idx = len(index_map) + oov_word.index(token)
             else:
                 idx = UNK_INDEX
-            if token not in punc or i+1 < len(sval):
+            if token not in punc or i + 1 < len(sval):
                 idxs.append(idx)
         tokens.append(idxs)
     return tokens
@@ -157,7 +152,7 @@ def merge(ordered, gold_out=True):
         queries = None
         context = None
         answers = None
-    for i in range(1, len(ordered)+1):
+    for i in range(1, len(ordered) + 1):
         val = ordered[i]
         for dct in val:
             preds.append(dct['preds'])
@@ -268,21 +263,21 @@ for num, org in zip(mem2seq_d_ids, mem2seq):
     element_dict = defaultdict(list)
     element_dict['preds'] = p
     element_dict['golds'] = g
-    ordered_mem2seq[num+1].append(element_dict)
+    ordered_mem2seq[num + 1].append(element_dict)
 
 for num, org in zip(PTRUNK_d_ids, PTRUNK):
     p, g = org
     element_dict = defaultdict(list)
     element_dict['preds'] = p
     element_dict['golds'] = g
-    ordered_PTRUNK[num+1].append(element_dict)
+    ordered_PTRUNK[num + 1].append(element_dict)
 
 for num, org in zip(vanilla_d_ids, vanilla):
     p, g = org
     element_dict = defaultdict(list)
     element_dict['preds'] = p
     element_dict['golds'] = g
-    ordered_vanilla[num+1].append(element_dict)
+    ordered_vanilla[num + 1].append(element_dict)
 
 preds, golds, queries, context, answers, dids = merge(ordered_orig, True)
 preds_mem2seq = merge(ordered_mem2seq, False)
@@ -334,7 +329,7 @@ if turk:
     print('preds_mem2seq_size : {}'.format(len(preds_mem2seq)))
     print('preds_PTRUNK_size : {}'.format(len(preds_PTRUNK)))
     print('preds_vanilla_size : {}'.format(len(preds_vanilla)))
-    c = list(range(1, size+1))
+    c = list(range(1, size + 1))
     sample = random.sample(c, 10)
     output_dict = {}
     for i in sample:

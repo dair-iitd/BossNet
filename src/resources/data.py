@@ -34,8 +34,7 @@ class Data(object):
 
         # Create DB word mappings to Vocab
         self._entity_set, self._entity_ids = \
-            self._populate_entity_set(
-                glob, self._stories_ext, self._answers_ext)
+            self._populate_entity_set(glob, self._stories_ext, self._answers_ext)
 
         # Get indicies where copying must take place
         self._intersection_set = \
@@ -168,8 +167,7 @@ class Data(object):
 
             for sentence in story:
                 pad = max(0, glob['sentence_size'] - len(sentence))
-                story_sentences.append(
-                    [glob['word_idx'][w] if w in glob['word_idx'] else UNK_INDEX for w in sentence] + [0] * pad)
+                story_sentences.append([glob['word_idx'][w] if w in glob['word_idx'] else UNK_INDEX for w in sentence] + [0] * pad)
                 sentence_sizes.append(len(sentence))
                 story_string.append([str(x) for x in sentence] + [''] * pad)
 
@@ -177,12 +175,10 @@ class Data(object):
                 for w in sentence:
                     if w not in glob['decode_idx']:
                         if w not in oov_words:
-                            oov_sentence_ids.append(
-                                self._decode_vocab_size + len(oov_words))
+                            oov_sentence_ids.append(self._decode_vocab_size + len(oov_words))
                             oov_words.append(w)
                         else:
-                            oov_sentence_ids.append(
-                                self._decode_vocab_size + oov_words.index(w))
+                            oov_sentence_ids.append(self._decode_vocab_size + oov_words.index(w))
                     else:
                         oov_sentence_ids.append(glob['decode_idx'][w])
                 oov_sentence_ids = oov_sentence_ids + [PAD_INDEX] * pad
@@ -190,8 +186,7 @@ class Data(object):
 
             # take only the most recent sentences that fit in memory
             if len(story_sentences) > args.memory_size:
-                story_sentences = story_sentences[::-
-                                                  1][:args.memory_size][::-1]
+                story_sentences = story_sentences[::-1][:args.memory_size][::-1]
                 sentence_sizes = sentence_sizes[::-1][:args.memory_size][::-1]
                 story_string = story_string[::-1][:args.memory_size][::-1]
                 oov_ids = oov_ids[::-1][:args.memory_size][::-1]
@@ -222,8 +217,7 @@ class Data(object):
 
         for i, query in enumerate(queries):
             pad = max(0, glob['sentence_size'] - len(query))
-            query_sentence = [glob['word_idx'][w] if w in glob['word_idx']
-                              else UNK_INDEX for w in query] + [0] * pad
+            query_sentence = [glob['word_idx'][w] if w in glob['word_idx'] else UNK_INDEX for w in query] + [0] * pad
 
             self._queries.append(np.array(query_sentence))
             self._query_sizes.append(np.array([len(query)]))
@@ -248,8 +242,7 @@ class Data(object):
                     answer_sentence.append(glob['decode_idx'][w])
                     a_emb_lookup.append(glob['decode_idx'][w])
                 elif w in self._oov_words[i]:
-                    answer_sentence.append(
-                        self._decode_vocab_size + self._oov_words[i].index(w))
+                    answer_sentence.append(self._decode_vocab_size + self._oov_words[i].index(w))
                     a_emb_lookup.append(UNK_INDEX)
                 else:
                     answer_sentence.append(UNK_INDEX)
@@ -257,7 +250,7 @@ class Data(object):
             answer_sentence = answer_sentence + [EOS_INDEX] + [PAD_INDEX] * pad
             a_emb_lookup = a_emb_lookup + [EOS_INDEX] + [PAD_INDEX] * pad
             self._answers.append(np.array(answer_sentence))
-            self._answer_sizes.append(np.array([len(answer)+1]))
+            self._answer_sizes.append(np.array([len(answer) + 1]))
             self._read_answers.append(' '.join([str(x) for x in answer]))
             self._answers_emb_lookup.append(np.array(a_emb_lookup))
         return self._answers, self._answer_sizes, self._read_answers, self._answers_emb_lookup
@@ -280,8 +273,7 @@ class Data(object):
                     if w not in self._entity_set:
                         self._entity_set.add(w)
 
-        self._entity_ids = set([glob['decode_idx'][x]
-                                for x in self._entity_set if x in glob['decode_idx']])
+        self._entity_ids = set([glob['decode_idx'][x] for x in self._entity_set if x in glob['decode_idx']])
         return self._entity_set, self._entity_ids
 
     def _intersection_set_mask(self, answers, entity_ids, glob):
@@ -292,8 +284,7 @@ class Data(object):
         for i, answer in enumerate(answers):
 
             vocab = set(answer).intersection(entity_ids)
-            dialog_mask = [
-                0.0 if (x in vocab or x not in glob['idx_decode']) else 1.0 for x in answer]
+            dialog_mask = [0.0 if (x in vocab or x not in glob['idx_decode']) else 1.0 for x in answer]
             self._intersection_set.append(np.array(dialog_mask))
         return self._intersection_set
 
@@ -301,8 +292,7 @@ class Data(object):
         '''
                 Get list of entity indecies in each Dialog Response
         '''
-        self._entities = [np.array([i for i, word in enumerate(
-            ans.split()) if word in entity_set]) for ans in read_answers]
+        self._entities = [np.array([i for i, word in enumerate(ans.split()) if word in entity_set]) for ans in read_answers]
         return self._entities
 
 
@@ -347,8 +337,7 @@ class Batch(Data):
         self._entity_ids = data.entity_ids
 
         if args.word_drop and train:
-            self._stories = self._all_db_to_unk(
-                self._stories, data.db_vocab_id, args.word_drop_prob)
+            self._stories = self._all_db_to_unk(self._stories, data.db_vocab_id, args.word_drop_prob)
 
     def _all_db_to_unk(self, stories, db_vocab_id, word_drop_prob):
         '''
