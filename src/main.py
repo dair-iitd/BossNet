@@ -1,11 +1,6 @@
-from __future__ import absolute_import
-from __future__ import print_function
-
-import json
 import logging
 import numpy as np
 import os
-import pdb
 import sys
 import tensorflow as tf
 from functools import reduce
@@ -16,8 +11,6 @@ from resources.data import Data, Batch
 from resources.data_utils import *
 from resources.evaluation import evaluate
 from resources.params import get_params, print_params
-from six.moves import range
-from sklearn import metrics
 from tqdm import tqdm
 
 args = get_params()

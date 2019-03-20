@@ -1,9 +1,4 @@
-import json
-import numpy as np
-import pickle as pkl
-import random
 import re
-import sys
 from collections import defaultdict
 from resources.measures import moses_multi_bleu
 from sklearn.metrics import f1_score

@@ -1,18 +1,7 @@
-from __future__ import absolute_import
-
-import json
-import matplotlib.pyplot as plt
 import numpy as np
 import os
-import pickle as pkl
 import re
-import seaborn as sns
-import sys
 import tensorflow as tf
-from matplotlib import gridspec
-from resources.measures import moses_multi_bleu
-from nltk.translate.bleu_score import corpus_bleu
-from sklearn.metrics import f1_score
 
 __all__ = ["get_decoder_vocab",
            "load_dialog_task",
