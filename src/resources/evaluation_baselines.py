@@ -5,7 +5,7 @@ import random
 import re
 import sys
 from collections import defaultdict
-from measures import moses_multi_bleu
+from resources.measures import moses_multi_bleu
 from sklearn.metrics import f1_score
 
 stop_words = set(["a", "an", "the"])

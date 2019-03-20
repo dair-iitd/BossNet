@@ -10,7 +10,7 @@ import seaborn as sns
 import sys
 import tensorflow as tf
 from matplotlib import gridspec
-from measures import moses_multi_bleu
+from resources.measures import moses_multi_bleu
 from nltk.translate.bleu_score import corpus_bleu
 from sklearn.metrics import f1_score
 
