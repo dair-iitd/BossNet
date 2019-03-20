@@ -16,7 +16,7 @@ from six.moves import urllib
 def wer(r, h):
     """
     This is a function that calculate the word error rate in ASR.
-    You can use it like this: wer("what is it".split(), "what is".split()) 
+    You can use it like this: wer("what is it".split(), "what is".split())
     """
     # build the matrix
     d = numpy.zeros((len(r) + 1) * (len(h) + 1), dtype=numpy.uint8).reshape((len(r) + 1, len(h) + 1))
@@ -80,7 +80,7 @@ def moses_multi_bleu(hypotheses, references, lowercase=False):
             "https://raw.githubusercontent.com/moses-smt/mosesdecoder/"
             "master/scripts/generic/multi-bleu.perl")
         os.chmod(multi_bleu_path, 0o755)
-    except:  # pylint: disable=W0702
+    except BaseException:  # pylint: disable=W0702
         print("Unable to fetch multi-bleu.perl script, using local.")
         metrics_dir = os.path.dirname(os.path.realpath(__file__))
         bin_dir = os.path.abspath(os.path.join(metrics_dir, "..", "..", "bin"))

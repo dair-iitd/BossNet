@@ -134,7 +134,7 @@ def tokenize(vals, dids):
     tokens = []
     punc = ['.', ',', '!', '\'', '\"', '-', '?']
     for i, val in enumerate(vals):
-        sval = [x.strip() for x in re.split('(\W+)?', val) if x.strip()]
+        sval = [x.strip() for x in re.split(r'(\W+)?', val) if x.strip()]
         idxs = []
         did = dids[i] + 1
         oov_word = ordered_oovs[did]

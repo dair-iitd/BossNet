@@ -36,8 +36,8 @@ EOS_INDEX = 3
 
 
 def get_decoder_vocab(data_dir, task_id):
-    ''' 
-        Load Vocabulary Space for Response-Decoder 
+    '''
+        Load Vocabulary Space for Response-Decoder
     '''
     assert task_id > 0 and task_id < 9
     decoder_vocab_to_index = {}
@@ -78,8 +78,8 @@ def get_responses(file):
 
 
 def load_dialog_task(data_dir, task_id):
-    ''' 
-        Load Train, Test, Validation Dialogs 
+    '''
+        Load Train, Test, Validation Dialogs
     '''
     assert task_id > 0 and task_id < 9
     files = os.listdir(data_dir)
@@ -108,7 +108,7 @@ def tokenize(sent):
     sent = sent.lower()
     if sent == '<silence>':
         return [sent]
-    result = [x.strip() for x in re.split('(\W+)?', sent) if x.strip()]
+    result = [x.strip() for x in re.split(r'(\W+)?', sent) if x.strip()]
     if not result:
         result = ['<silence>']
     if result[-1] == '.' or result[-1] == '?' or result[-1] == '!':

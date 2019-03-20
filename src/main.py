@@ -8,6 +8,7 @@ import os
 import pdb
 import sys
 import tensorflow as tf
+from functools import reduce
 from itertools import chain
 from memn2n.memn2n_dialog_generator import MemN2NGeneratorDialog
 from operator import itemgetter
@@ -15,7 +16,7 @@ from resources.data import Data, Batch
 from resources.data_utils import *
 from resources.evaluation import evaluate
 from resources.params import get_params, print_params
-from six.moves import range, reduce
+from six.moves import range
 from sklearn import metrics
 from tqdm import tqdm
 
