@@ -2,24 +2,24 @@
 BossNet: Disentangling Language and Knowledge in Task Oriented Dialogs
 
 ## Datasets
-The complete data folder structure with all tasks can be downloaded here.  
+The complete data folder structure with all tasks can be downloaded [here](https://drive.google.com/open?id=11D-ui5KiQHQN45yVc2PqthxO3tWJH4vW).  
 
 ### Individual Datasets
-- bAbI Dialog (26.2 MB)
-- CamRest (1.1 MB)
-- Stanford Multi Domain Dataset / SMD (6.7 MB)
+- [bAbI Dialog](https://drive.google.com/open?id=1fc1CKlJi_DJcr0kGrwwa2x4OiZyinavN) (26.2 MB)
+- [CamRest](https://drive.google.com/open?id=1TIo74qjRiGeZNOiLKWit72a98lgv75MN) (1.1 MB)
+- [Stanford Multi Domain Dataset / SMD](https://drive.google.com/open?id=1KRYx9HgpSeNkdNCzyzUiUzR_zmt0dyh7) (6.7 MB)
 
 ## Run Environment
 We include a `requirements.txt` which has all the libraries installed for the correct run of the BossNet code.
 For best practices create a virtual / conda environment and install all dependencies via:
 ```console
-❱❱❱ pip install requirements.txt
+❱❱❱ pip install -r requirements.txt
 ```
 
 ## Training
 The model is run using the script `main.py` 
 ```console
-❱❱❱ python main.py --train --task_id 1 --batch_size 64 --word_drop_rate 0.2 --learning_rate 0.001 --embedding_size 128 --hops 3
+❱❱❱ python main.py --task_id 1 --train 
 ```
 
 The list of parameters to run the script is:
@@ -37,10 +37,7 @@ Look at `params.py` for detailed information on the runtime options
 There is support to start training from a previously saved checkpoint with the *--save* flag.
 
 ## Testing
-To test the best model and get accuracies run `single_dialog.py` with *--train=False* or by omitting the train flag altogether.
+To obtain metric scores on the best model run `main.py` with *--train=False* or by omitting the train flag altogether. Make sure all the parameter options match those of the trained model.
 ```console
-❱❱❱ python main.py --task_id 1 --batch_size 64 --word_drop_rate 0.2 --learning_rate 0.001 --embedding_size 128 --hops 3
+❱❱❱ python main.py --task_id 1
 ```
-
-## Models
-You can access all the saved models for each task here. The parameters to run each model is mentioned in the paper.
