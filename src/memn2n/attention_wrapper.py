@@ -327,7 +327,7 @@ def _luong_score(query, keys, scale):
     return score
 
 
-def _luong_word_score(query, word_keys, scale, size, hierarchy):
+def _luong_word_score(query, word_keys, scale, size, hierarchy, batch_size):
     """Implements Luong-style (multiplicative) scoring function.
 
     This attention has two forms.  The first is standard Luong attention,
@@ -377,7 +377,10 @@ def _luong_word_score(query, word_keys, scale, size, hierarchy):
     # resulting in an output shape of:
     #   [batch_time, 1, max_time].
     # we then squeeze out the center singleton dimension.
-    word_keys = tf.transpose(word_keys, [1, 0, 2, 3])
+    save_shape = word_keys.get_shape().as_list()
+    word_keys_small = tf.reshape(word_keys,  [batch_size, -1, save_shape[2]*save_shape[3]])
+    word_keys = tf.transpose(word_keys_small, [1, 0, 2])
+    word_keys = tf.reshape(word_keys, [-1, batch_size, save_shape[2], save_shape[3]])
     def context_fn(key): return array_ops.squeeze(math_ops.matmul(query, key, transpose_b=True), [1])
     scores = tf.map_fn(context_fn, word_keys)
     scores = tf.transpose(scores, [1, 0, 2])
@@ -466,7 +469,7 @@ class CustomAttention(_BaseAttentionMechanism):
         self._line_softmax = line_softmax
         self._soft_weight = soft_weight
 
-    def __call__(self, query, previous_alignments):
+    def __call__(self, query, batch_size, previous_alignments):
         """Score the query based on the keys and values.
 
         Args:
@@ -483,7 +486,7 @@ class CustomAttention(_BaseAttentionMechanism):
         """
         with variable_scope.variable_scope(None, "custom_attention", [query]):
             line_scores = _luong_score(query, self._keys, self._scale)
-            word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size, self._hierarchy)
+            word_scores = _luong_word_score(query, self._word_values, self._scale, self._alignments_size, self._hierarchy, batch_size)
 
         if self._line_softmax:
             line_alignments = self._soft_weight * self._probability_fn(line_scores)
@@ -554,11 +557,11 @@ class AttentionWrapperState(
         return super(AttentionWrapperState, self)._replace(**kwargs)
 
 
-def _compute_attention(attention_mechanism, cell_output, previous_alignments,
+def _compute_attention(attention_mechanism, batch_size, cell_output, previous_alignments,
                        attention_layer):
     """Computes the attention and alignments for a given attention_mechanism."""
     line_alignments, word_alignments, hier_alignments = attention_mechanism(
-        cell_output, previous_alignments=previous_alignments)
+        cell_output, batch_size, previous_alignments=previous_alignments)
 
     # Reshape from [batch_size, memory_time] to [batch_size, 1, memory_time]
     # Context is the inner product of alignments and values along the
@@ -952,7 +955,7 @@ class AttentionWrapper(rnn_cell_impl.RNNCell):
         all_histories = []
         for i, attention_mechanism in enumerate(self._attention_mechanisms):
             line_attention, hier_alignments = _compute_attention(
-                attention_mechanism, cell_output, previous_alignments[i],
+                attention_mechanism, cell_batch_size, cell_output, previous_alignments[i],
                 self._attention_layers[i] if self._attention_layers else None)
             alignment_history = previous_alignment_history[i].write(
                 state.time, alignments) if self._alignment_history else ()
