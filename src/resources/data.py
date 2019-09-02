@@ -30,7 +30,7 @@ class Data(object):
             self._vectorize_answers(self._answers_ext, glob)
 
         # Create DB word mappings to Vocab
-        self._entity_set, self._entity_ids = \
+        self._entity_set, self._entity_ids, self._encoder_entity_ids = \
             self._populate_entity_set(glob, self._stories_ext, self._answers_ext)
 
         # Get indicies where copying must take place
@@ -123,6 +123,10 @@ class Data(object):
     @property
     def entity_ids(self):
         return self._entity_ids
+
+    @property
+    def encoder_entity_ids(self):
+        return self._encoder_entity_ids
 
     @property
     def entities(self):
@@ -271,7 +275,9 @@ class Data(object):
                         self._entity_set.add(w)
 
         self._entity_ids = set([glob['decode_idx'][x] for x in self._entity_set if x in glob['decode_idx']])
-        return self._entity_set, self._entity_ids
+        self._encoder_entity_ids = set([glob['word_idx'][x] for x in self._entity_set if x in glob['word_idx']])
+        
+        return self._entity_set, self._entity_ids, self._encoder_entity_ids
 
     def _intersection_set_mask(self, answers, entity_ids, glob):
         '''
@@ -333,6 +339,8 @@ class Batch(Data):
 
         self._entity_ids = data.entity_ids
 
+        self._encoder_entity_ids = data.encoder_entity_ids
+
         if args.word_drop and train:
             self._stories = self._all_db_to_unk(self._stories, data.db_vocab_id, args.word_drop_prob)
 
@@ -347,7 +355,7 @@ class Batch(Data):
             for i in range(new_story.shape[0]):
                 if db_vocab_id not in new_story[i]:
                     for j in range(new_story.shape[1]):
-                        if new_story[i][j] in self._entity_ids:
+                        if new_story[i][j] in self._encoder_entity_ids:
                             sample = random.uniform(0, 1)
                             if sample < word_drop_prob:
                                 new_story[i][j] = UNK_INDEX
