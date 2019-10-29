@@ -12,4 +12,4 @@ sklearn==0.0
 tensorflow==1.5.1
 tensorflow-tensorboard==1.5.1
 tqdm==4.31.1
-Werkzeug==0.15.0
+Werkzeug==0.15.3
